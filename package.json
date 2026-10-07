@@ -1,0 +1,35 @@
+{
+  "name": "memlayer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant enterprise chatbot memory: working, profile, knowledge, episodic, and operational layers with a sub-millisecond hot path.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.3",
+  "scripts": {
+    "test": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' vitest run",
+    "bench": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' tsx src/bench/bench.ts",
+    "example": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' tsx examples/chat-bot.ts",
+    "start": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' tsx src/http/main.ts",
+    "dev": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' tsx src/http/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "^3.1.2",
+    "fastify": "^5.6.1",
+    "ioredis": "^5.8.1",
+    "lru-cache": "^11.1.0",
+    "zod": "^3.25.76"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.8",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules
+data
+.git
+dist
+coverage
+*.log
+**/*.sqlite
+**/*.sqlite-wal
+**/*.sqlite-shm
