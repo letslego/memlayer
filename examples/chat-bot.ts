@@ -76,7 +76,7 @@ function mockModel(pack: ContextPack, userText: string): string {
   const name = pack.profile.find((fact) => fact.key === 'preferred_name')?.value ?? 'there';
   const locale = pack.profile.find((fact) => fact.key === 'locale')?.value;
   const hit = pack.knowledge[0];
-  const prefix = locale === 'fr' ? 'Bien s\u00fbr' : 'Sure';
+  const prefix = locale === 'fr' ? 'Bien sûr' : 'Sure';
   if (!hit) {
     return `${prefix}, ${String(name)}. I don't have a documented answer for "${userText.slice(0, 80)}".`;
   }
