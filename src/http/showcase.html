@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Memlayer — five memory layers</title>
+    <style>
+      :root {
+        --bg: #141210;
+        --panel: #1e1b17;
+        --ink: #f4efe6;
+        --muted: #b3a89a;
+        --line: #3a342c;
+        --copper: #e08a45;
+        --sage: #9cba86;
+        --clay: #d7b48a;
+        --rose: #e07a72;
+        --sky: #8eb4c9;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        min-height: 100vh;
+        background:
+          radial-gradient(1200px 500px at 10% -10%, #3a2a1c 0%, transparent 55%),
+          var(--bg);
+        color: var(--ink);
+        font: 16px/1.5 "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+      }
+      a { color: var(--copper); }
+      header, main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+      header { padding: 36px 0 8px; }
+      .kicker {
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: var(--copper);
+      }
+      h1 { font-weight: 500; font-size: clamp(32px, 5vw, 52px); line-height: 1.05; margin: 8px 0 12px; }
+      .lede { max-width: 68ch; color: var(--muted); margin: 0 0 18px; }
+      .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+      button, .ghost {
+        font: 14px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        border-radius: 999px;
+        padding: 10px 16px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--ink);
+        text-decoration: none;
+      }
+      button { background: var(--copper); color: #1a120c; border-color: transparent; cursor: pointer; }
+      button:disabled { opacity: 0.55; cursor: wait; }
+      main { padding-bottom: 64px; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 12px;
+        margin-top: 22px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 14px 16px 16px;
+        min-height: 180px;
+      }
+      .span2 { grid-column: span 2; }
+      .span3 { grid-column: span 3; }
+      .span6 { grid-column: span 6; }
+      h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        font-weight: 500;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .tag {
+        font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 8px;
+        white-space: nowrap;
+      }
+      pre, .mono {
+        font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+      }
+      .empty { color: var(--muted); }
+      .ok { color: var(--sage); }
+      .bad { color: var(--rose); }
+      .log { max-height: 220px; overflow: auto; }
+      .log div { padding: 3px 0; border-bottom: 1px solid #2c2823; }
+      @media (max-width: 860px) {
+        .span2, .span3, .span6 { grid-column: span 6; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="kicker">Memlayer · local Docker</div>
+      <h1>How the five memory layers are used</h1>
+      <p class="lede">
+        Ada at Acme asks about the refund window. The page writes working turns, profile facts,
+        a tenant knowledge base, an episode, and an audit row, then asks the service for the
+        prompt a model would see. Operational memory stays out of that prompt until the caller
+        asks for it. A Globex-only document is ingested with the other key and must not appear.
+      </p>
+      <div class="row">
+        <button id="run" type="button">Run the Acme turn</button>
+        <a class="ghost" id="forge" href="http://127.0.0.1:8791">TrueForge on :8791</a>
+        <a class="ghost" href="/health">/health</a>
+      </div>
+    </header>
+    <main>
+      <section class="grid">
+        <article class="card span2">
+          <h2>Working <span class="tag">Redis · session</span></h2>
+          <div id="working" class="mono empty">Waiting for the turn.</div>
+        </article>
+        <article class="card span2">
+          <h2>Profile <span class="tag">L1 · Redis · SQLite</span></h2>
+          <div id="profile" class="mono empty">Facts about Ada.</div>
+        </article>
+        <article class="card span2">
+          <h2>Knowledge <span class="tag">HNSW + BM25</span></h2>
+          <div id="knowledge" class="mono empty">Per-tenant search.</div>
+        </article>
+        <article class="card span3">
+          <h2>Episodic <span class="tag">SQLite</span></h2>
+          <div id="episodes" class="mono empty">A decision recorded for this user.</div>
+        </article>
+        <article class="card span3">
+          <h2>Operational <span class="tag">audit · caps</span></h2>
+          <div id="operational" class="mono empty">Kept for the app, not the model, unless requested.</div>
+        </article>
+        <article class="card span3">
+          <h2>Prompt sent to the model</h2>
+          <pre id="prompt" class="empty">assembleContext without includeOperational.</pre>
+        </article>
+        <article class="card span3">
+          <h2>Same call, operational included</h2>
+          <pre id="prompt-ops" class="empty">includeOperational: true adds caps and audit.</pre>
+        </article>
+        <article class="card span6">
+          <h2>Calls <span class="tag" id="status">idle</span></h2>
+          <div id="log" class="log mono empty">Each line is a real request to this server.</div>
+        </article>
+      </section>
+    </main>
+    <script>
+      const ACME = 'dev_acme_key';
+      const GLOBEX = 'dev_globex_key';
+      const forge = document.getElementById('forge');
+      forge.href = `http://${location.hostname}:8791`;
+      const runBtn = document.getElementById('run');
+      const logEl = document.getElementById('log');
+      const statusEl = document.getElementById('status');
+
+      runBtn.addEventListener('click', () => run().catch(fail));
+      run().catch(fail);
+
+      function fail(error) {
+        statusEl.textContent = 'failed';
+        runBtn.disabled = false;
+        line(String(error && error.message ? error.message : error), 'bad');
+      }
+
+      function line(text, cls) {
+        if (logEl.classList.contains('empty')) {
+          logEl.textContent = '';
+          logEl.classList.remove('empty');
+        }
+        const row = document.createElement('div');
+        row.textContent = text;
+        if (cls) row.className = cls;
+        logEl.appendChild(row);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function show(id, text, cls) {
+        const el = document.getElementById(id);
+        el.textContent = text;
+        el.className = 'mono' + (cls ? ' ' + cls : '');
+      }
+
+      async function api(key, method, path, body) {
+        const res = await fetch(path, {
+          method,
+          headers: {
+            'x-api-key': key,
+            ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+        const text = await res.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+        const label = `${method} ${path} → ${res.status}`;
+        line(label, res.ok ? 'ok' : 'bad');
+        if (!res.ok) {
+          const message = data && data.error ? `${data.error.code}: ${data.error.message}` : text;
+          throw new Error(`${label} ${message}`);
+        }
+        return data;
+      }
+
+      async function run() {
+        runBtn.disabled = true;
+        statusEl.textContent = 'running';
+        logEl.textContent = '';
+        logEl.classList.remove('empty');
+        const sessionId = `s_show_${Date.now()}`;
+        const userId = 'u_ada';
+
+        const health = await fetch('/health').then((r) => r.json());
+        line(`GET /health → redis=${health.redis} database=${health.database}`, 'ok');
+
+        await api(ACME, 'POST', '/v1/knowledge/documents', {
+          title: 'Acme refund policy',
+          text: 'Enterprise customers can request a refund within 30 days of the invoice. Refunds over 500 USD need finance approval.',
+        });
+        await api(GLOBEX, 'POST', '/v1/knowledge/documents', {
+          title: 'Globex wire desk',
+          text: 'globexwiretoken9912 is restricted to the globex tenant and must never appear in an acme prompt.',
+        });
+
+        await api(ACME, 'PUT', `/v1/users/${userId}/facts/preferred_name`, {
+          type: 'string', value: 'Ada',
+        });
+        await api(ACME, 'PUT', `/v1/users/${userId}/facts/plan`, {
+          type: 'string', value: 'enterprise',
+        });
+        const profile = await api(ACME, 'GET', `/v1/users/${userId}/profile`);
+        show('profile', profile.facts.map((fact) => `${fact.key}: ${JSON.stringify(fact.value)}`).join('\n'));
+
+        const episode = await api(ACME, 'POST', '/v1/episodes', {
+          userId,
+          sessionId,
+          type: 'decision',
+          summary: 'Refunds over 500 USD need finance approval.',
+        });
+        show('episodes', `${episode.type}\n${episode.summary}`);
+
+        await api(ACME, 'PUT', '/v1/caps', {
+          scope: 'session',
+          targetId: sessionId,
+          maxSteps: 20,
+          maxSpendUnits: 5,
+        });
+        const userText = 'What is the refund window for enterprise customers?';
+        await api(ACME, 'POST', `/v1/sessions/${sessionId}/turns`, {
+          role: 'user', content: userText,
+        });
+
+        const pack = await api(ACME, 'POST', '/v1/context', {
+          userId, sessionId, query: 'refund window',
+        });
+        const reply = 'Enterprise customers have 30 days from the invoice. Amounts over 500 USD need finance approval.';
+        await api(ACME, 'POST', `/v1/sessions/${sessionId}/turns`, {
+          role: 'assistant', content: reply,
+        });
+        const working = await api(ACME, 'GET', `/v1/sessions/${sessionId}/memory`);
+        show('working', working.turns.map((turn) => `${turn.role}: ${turn.content}`).join('\n\n'));
+
+        await api(ACME, 'POST', '/v1/audit', {
+          userId,
+          sessionId,
+          action: 'model_call',
+          toolName: 'support_reply',
+          steps: 1,
+          costUnits: 0.02,
+          detail: { tokens: pack.tokenEstimate },
+        });
+
+        const acmeHits = await api(ACME, 'POST', '/v1/knowledge/search', {
+          query: 'refund window', userId, topK: 3,
+        });
+        const leaked = await api(ACME, 'POST', '/v1/knowledge/search', {
+          query: 'globexwiretoken9912', userId, topK: 3,
+        });
+        const globexHits = await api(GLOBEX, 'POST', '/v1/knowledge/search', {
+          query: 'globexwiretoken9912', topK: 3,
+        });
+        const acmeText = (acmeHits.hits || []).map((hit) => hit.title).join(', ') || '(none)';
+        const leakText = (leaked.hits || []).length === 0 ? 'none' : leaked.hits.map((hit) => hit.title).join(', ');
+        const globexText = (globexHits.hits || []).map((hit) => hit.title).join(', ') || '(none)';
+        show(
+          'knowledge',
+          `acme "refund window" → ${acmeText}\nacme "globexwiretoken9912" → ${leakText}\nglobex same token → ${globexText}`,
+          leaked.hits.length === 0 ? 'ok' : 'bad',
+        );
+
+        const withOps = await api(ACME, 'POST', '/v1/context', {
+          userId, sessionId, query: 'refund window', includeOperational: true,
+        });
+        const caps = await api(ACME, 'GET', `/v1/caps?userId=${encodeURIComponent(userId)}&sessionId=${encodeURIComponent(sessionId)}`);
+        const audit = await api(ACME, 'GET', `/v1/audit?userId=${encodeURIComponent(userId)}&sessionId=${encodeURIComponent(sessionId)}`);
+        const bucket = (caps.buckets || []).map((item) => `${item.scope} steps ${item.stepsUsed}/${item.maxSteps ?? '∞'}`).join('\n');
+        const events = (audit.events || []).map((event) => `${event.action} ${event.toolName || ''}`.trim()).join('\n');
+        show('operational', `${bucket}\n${events}\nblocked=${caps.blocked}`);
+
+        const defaultHasOps = pack.prompt.includes('kill_switch') || pack.operational;
+        const opsHasSection = Boolean(withOps.operational) && withOps.prompt.includes('Operational');
+        const secretInPrompt = pack.prompt.includes('globexwiretoken9912') || withOps.prompt.includes('globexwiretoken9912');
+        show('prompt', pack.prompt + `\n\n— ${pack.tokenEstimate} tokens, truncated=${pack.truncated}, operational field ${pack.operational ? 'present' : 'absent'}`);
+        show('prompt-ops', withOps.prompt + `\n\n— operational field ${withOps.operational ? 'present' : 'absent'}`);
+        if (defaultHasOps) line('default prompt included operational memory', 'bad');
+        else line('default prompt omitted operational memory', 'ok');
+        if (!opsHasSection) line('includeOperational did not attach the operational slice', 'bad');
+        else line('includeOperational attached caps and recent audit', 'ok');
+        if (secretInPrompt || leaked.hits.length > 0) line('globex document leaked into acme', 'bad');
+        else line('globex document stayed in the globex index', 'ok');
+
+        statusEl.textContent = 'done';
+        runBtn.disabled = false;
+      }
+    </script>
+  </body>
+</html>
