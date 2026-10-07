@@ -1,0 +1,74 @@
+# Memlayer in Docker, with Redis as the hot-path store.
+# SQLite stays inside the memlayer container (volume memlayer-data).
+#
+#   docker compose up -d --build
+#   open http://127.0.0.1:43123/showcase
+#
+# TrueForge (the agent harness) is a separate compose file:
+#   docker compose -f deploy/trueforge/docker-compose.yml up -d --build
+#
+# Both services use the host network. Redis listens on 127.0.0.1:6379 and
+# Memlayer on 127.0.0.1:43123. That avoids the Docker bridge, which does not
+# forward between containers on some nested Linux hosts.
+
+name: memlayer
+
+services:
+  redis:
+    image: redis:7-alpine
+    network_mode: host
+    command:
+      [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no",
+        "--bind",
+        "127.0.0.1",
+        "--port",
+        "6379",
+        "--protected-mode",
+        "yes",
+      ]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    restart: unless-stopped
+
+  memlayer:
+    build: .
+    image: memlayer:local
+    network_mode: host
+    environment:
+      HOST: 0.0.0.0
+      PORT: 43123
+      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_POOL_SIZE: 4
+      DATABASE_PATH: /data/memlayer.sqlite
+      API_KEYS: dev_acme_key:acme,dev_globex_key:globex
+      L1_TTL_MS: 500
+      L1_MAX: 10000
+    volumes:
+      - memlayer-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:43123/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 8s
+    restart: unless-stopped
+
+volumes:
+  memlayer-data:

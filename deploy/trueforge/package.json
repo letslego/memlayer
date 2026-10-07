@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "dependencies": {
+    "@truefoundry/trueforge": "0.3.1"
+  },
+  "overrides": {
+    "ai": "7.0.129"
+  }
+}

@@ -1,0 +1,25 @@
+# Local TrueForge (https://github.com/truefoundry/trueforge), standalone mode.
+# Chat UI and HTTP API listen on port 8791. Host networking matches Memlayer
+# on machines where the Docker bridge does not forward between containers.
+#
+#   docker compose -f deploy/trueforge/docker-compose.yml up -d --build
+
+name: trueforge
+
+services:
+  trueforge:
+    build: .
+    image: trueforge:local
+    network_mode: host
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8791
+      STANDALONE: "true"
+      NODE_ENV: production
+      SQLITE_PATH: /data/trueforge.sqlite
+    volumes:
+      - trueforge-data:/data
+    restart: unless-stopped
+
+volumes:
+  trueforge-data:
