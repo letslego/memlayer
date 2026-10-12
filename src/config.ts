@@ -15,9 +15,12 @@ export interface ResolvedConfig {
   hnswEfConstruction: number;
   hnswEfSearch: number;
   profileFactLimit: number;
+  hnswSeed?: number;
 }
 
 export interface MemoryServiceOptions {
+  /** Fixed ANN construction seed for reproducible evaluations. */
+  hnswSeed?: number;
   databasePath?: string;
   redisUrl?: string;
   redisPoolSize?: number;
@@ -49,6 +52,7 @@ export function resolveConfig(options: MemoryServiceOptions = {}): ResolvedConfi
     embeddingDim: clampInt(options.embeddingDim ?? 128, 16, 1_024),
     defaultTimeoutMs: clampInt(options.defaultTimeoutMs ?? 2_000, 1, 60_000),
     defaultTokenBudget: clampInt(options.defaultTokenBudget ?? 4_096, 32, 200_000),
+    hnswSeed: options.hnswSeed,
     hnswM: 16,
     hnswEfConstruction: 64,
     hnswEfSearch: 64,

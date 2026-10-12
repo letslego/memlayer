@@ -1,0 +1,28 @@
+name: Memory evaluation
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm bench:locomo --data test/fixtures/locomo-smoke.json --out reports/ci-smoke.json --min-recall10 1
+      - run: pnpm bench:locomo:download
+      - run: pnpm bench:locomo --mode hybrid --out reports/ci-hybrid.json --min-recall10 0.45
+      - run: pnpm bench:locomo --mode bm25 --out reports/ci-bm25.json --min-recall10 0.53
+      - run: pnpm bench:locomo --mode hybrid-rerank --out reports/ci-rerank.json --min-recall10 0.47
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-evaluation
+          path: reports/ci-*.json

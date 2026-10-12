@@ -5,26 +5,30 @@
   "description": "Multi-tenant enterprise chatbot memory: working, profile, knowledge, episodic, and operational layers with a sub-millisecond hot path.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
-  "packageManager": "pnpm@10.33.3",
+  "packageManager": "pnpm@11.25.0",
   "scripts": {
     "test": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' vitest run",
-    "bench": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' tsx src/bench/bench.ts",
-    "example": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' tsx examples/chat-bot.ts",
-    "start": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' tsx src/http/main.ts",
-    "dev": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' tsx src/http/main.ts",
-    "typecheck": "tsc --noEmit"
+    "bench": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' node --import tsx src/bench/bench.ts",
+    "example": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' node --import tsx examples/chat-bot.ts",
+    "start": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' node --import tsx src/http/main.ts",
+    "dev": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' node --import tsx src/http/main.ts",
+    "typecheck": "tsc --noEmit",
+    "adk:dev": "node --env-file-if-exists=.env --import tsx examples/adk-chat.ts",
+    "bench:locomo": "node --env-file-if-exists=.env --import tsx src/bench/locomo-cli.ts",
+    "bench:adk": "node --env-file-if-exists=.env --import tsx src/bench/locomo-cli.ts --answers",
+    "bench:locomo:answers": "node --env-file-if-exists=.env --import tsx src/bench/locomo-cli.ts --answers",
+    "bench:locomo:download": "node --import tsx src/bench/download-locomo.ts"
   },
   "dependencies": {
+    "@google/adk": "2.2.1",
+    "@google/genai": "2.28.0",
     "@msgpack/msgpack": "^3.1.2",
     "fastify": "^5.6.1",
     "ioredis": "^5.8.1",
     "lru-cache": "^11.1.0",
     "zod": "^3.25.76"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
   },
   "devDependencies": {
     "@types/node": "^22.18.8",

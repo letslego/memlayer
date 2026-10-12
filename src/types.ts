@@ -70,7 +70,10 @@ export interface IngestResult {
   tokenEstimate: number;
 }
 
+export type RetrievalMode = 'hybrid' | 'bm25' | 'vector';
+
 export interface KnowledgeQuery {
+  mode?: RetrievalMode;
   query: string;
   topK?: number;
   userId?: string;

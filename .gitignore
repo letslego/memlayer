@@ -7,3 +7,6 @@ data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
 data/*.sqlite-journal
+data/locomo10.json
+reports/*.json
+!reports/baseline.json

@@ -191,3 +191,6 @@ SQLite tables map directly: `profile_facts`, `documents`, `chunks`, `episodes`, 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+# Google ADK and long-term memory evaluation
+
+The optional [ADK chatbot and LoCoMo harness](docs/adk-locomo.md) add persistent cross-session memory tools, BM25/vector/hybrid retrieval comparisons, and a separate Gemini answer evaluation. Start with `pnpm adk:dev`, run `pnpm bench:locomo:download`, then `pnpm bench:locomo`. Google credentials are required for live chat and answer evaluation; retrieval benchmarks default to offline hash embeddings. See `reports/baseline.json` for measured retrieval results.

@@ -42,6 +42,7 @@ export type {
   KillSwitchState,
   KnowledgeHit,
   KnowledgeQuery,
+  RetrievalMode,
   Profile,
   ProfileFact,
   Turn,
@@ -49,3 +50,5 @@ export type {
   TurnRole,
   WorkingMemory,
 } from './types.js';
+
+// ADK is opt-in: import src/adk/adapter.js directly to avoid loading its SDK in core users.

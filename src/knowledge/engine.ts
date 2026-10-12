@@ -3,7 +3,7 @@ import type { EmbeddingProvider } from '../embed/provider.js';
 import { resolveVector, resolveVectors } from '../embed/provider.js';
 import type { DurableStore, StoredChunk } from '../store/sqlite.js';
 import { chunkText, estimateTokens } from '../text.js';
-import type { Acl, IngestDocumentInput, IngestResult, KnowledgeHit } from '../types.js';
+import type { Acl, IngestDocumentInput, IngestResult, KnowledgeHit, RetrievalMode } from '../types.js';
 import { aclAllows, assertMetadata, createId, normalizeAcl } from '../validate.js';
 import { Bm25Index } from './bm25.js';
 import { HnswIndex } from './hnsw.js';
@@ -42,7 +42,7 @@ export class KnowledgeEngine {
   constructor(
     private readonly store: DurableStore,
     private readonly embedder: EmbeddingProvider,
-    private readonly hnsw: { m: number; efConstruction: number; efSearch: number },
+    private readonly hnsw: { m: number; efConstruction: number; efSearch: number; seed?: number },
   ) {}
 
   loadFromDisk(): void {
@@ -116,19 +116,21 @@ export class KnowledgeEngine {
     topK: number,
     userId?: string,
     roles?: string[],
+    mode: RetrievalMode = 'hybrid',
   ): Promise<KnowledgeHit[]> {
+    if (!['hybrid', 'bm25', 'vector'].includes(mode)) throw new ValidationError('Invalid retrieval mode');
     const index = this.tenants.get(tenantId);
     if (!index || index.chunks.length === 0) return [];
     const text = query.trim();
     if (!text) throw new ValidationError('query is empty');
     if (text.length > 8_000) throw new ValidationError('query exceeds 8000 characters');
-    const vector = await resolveVector(this.embedder.embedQuery(text));
-    if (vector.length !== this.embedder.dimensions) {
+    const vector = mode === 'bm25' ? null : await resolveVector(this.embedder.embedQuery(text));
+    if (vector && vector.length !== this.embedder.dimensions) {
       throw new ValidationError(`Expected embedding dimension ${this.embedder.dimensions}`);
     }
     const pool = Math.max(topK * 8, 32);
-    const ann = index.hnsw.search(vector, pool, Math.max(this.hnsw.efSearch, pool));
-    const keywords = index.bm25.search(text, pool);
+    const ann = vector ? index.hnsw.search(vector, pool, Math.max(this.hnsw.efSearch, pool)) : [];
+    const keywords = mode === 'vector' ? [] : index.bm25.search(text, pool);
     const vectorScores = new Map<number, number>();
     for (const hit of ann) vectorScores.set(hit.id, 1 - hit.distance);
     const keywordScores = new Map<number, number>();
@@ -149,13 +151,13 @@ export class KnowledgeEngine {
         title: chunk.title,
         source: chunk.source,
         text: chunk.text,
-        score: VECTOR_WEIGHT * vectorScore + (1 - VECTOR_WEIGHT) * keywordScore,
+        score: mode === 'bm25' ? keywordScore : mode === 'vector' ? vectorScore : VECTOR_WEIGHT * vectorScore + (1 - VECTOR_WEIGHT) * keywordScore,
         vectorScore,
         keywordScore,
         tokenEstimate: chunk.tokenEstimate,
       });
     }
-    ranked.sort((a, b) => b.score - a.score || a.chunkId.localeCompare(b.chunkId));
+    ranked.sort((a, b) => b.score - a.score || (a.source ?? '').localeCompare(b.source ?? '') || a.chunkId.localeCompare(b.chunkId));
     return ranked.slice(0, topK);
   }
 
@@ -184,7 +186,7 @@ export class KnowledgeEngine {
     let index = this.tenants.get(tenantId);
     if (!index) {
       index = {
-        hnsw: new HnswIndex(this.hnsw.m, this.hnsw.efConstruction, this.hnsw.efSearch),
+        hnsw: new HnswIndex(this.hnsw.m, this.hnsw.efConstruction, this.hnsw.efSearch, this.hnsw.seed === undefined ? Math.random : seededRandom(this.hnsw.seed)),
         bm25: new Bm25Index(),
         chunks: [],
       };
@@ -194,3 +196,7 @@ export class KnowledgeEngine {
   }
 }
 
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
+}
