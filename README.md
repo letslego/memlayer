@@ -4,7 +4,129 @@ Multi-tenant memory for an enterprise chatbot. Five layers, one TypeScript servi
 
 Working memory and profile facts are read from a small in-process LRU, then a Redis-compatible store (embedded by default, ioredis when `REDIS_URL` is set). Profile facts, episodes, the audit log, and knowledge metadata live in SQLite. Knowledge search uses a **separate HNSW + BM25 index per tenant**, so another tenant's vectors are never scored.
 
-No cloud API key is required. `pnpm test` and `pnpm bench` run offline.
+The memory service, tests, and default retrieval benchmarks run offline. **Atlas chat and Gemini answer benchmarks require Google credentials.**
+
+## Quick start
+
+Use **Node.js >=22.13** (Node 24 recommended), Git, and **pnpm 11.25.0**. These examples use Bash. Authenticate with GitHub before cloning this private repository.
+
+```bash
+npm install -g pnpm@11.25.0
+git clone https://github.com/letslego/memlayer.git
+cd memlayer
+pnpm install --frozen-lockfile
+cp .env.example .env
+pnpm typecheck
+pnpm test
+```
+
+Already cloned it? Pull the latest `main`, run `pnpm install --frozen-lockfile`, and keep your existing `.env`.
+
+| Goal | Command | Google credentials? |
+| --- | --- | --- |
+| Talk to Atlas in the terminal | `pnpm adk:dev` | Yes |
+| Open the memory API and showcase | `pnpm dev` | No |
+| Try the mock chatbot | `pnpm example` | No |
+| Measure operation speed | `pnpm bench` | No |
+| Measure long-term evidence retrieval | `pnpm bench:locomo` | No, with default hash embeddings |
+| Compare Gemini answers with and without memory | `pnpm bench:adk --limit 20` | Yes |
+
+## Start Atlas with Google ADK
+
+Create a Gemini API key in Google AI Studio using [Google’s API-key guide](https://ai.google.dev/gemini-api/docs/api-key). Edit `.env` and set `GOOGLE_API_KEY` to that key. Keep these defaults for your first run:
+
+```dotenv
+GOOGLE_API_KEY=your_gemini_api_key
+ADK_MODEL=gemini-2.5-flash
+ADK_PERSONA_PATH=
+MEMLAYER_TENANT=local
+MEMLAYER_USER=user
+MEMLAYER_SESSION=session-1
+MEMLAYER_DB=data/adk.sqlite
+MEMLAYER_EMBEDDINGS=hash
+```
+
+```bash
+pnpm adk:dev
+```
+
+Run from the repository root. The terminal prints `Atlas v1.0.0` and a session prompt. Enter “My preferred name is Amitabha. We chose PostgreSQL for the project.” Then switch with `/session project-followup` and ask “Which database did we choose?” Atlas can retrieve the earlier exchange for the same tenant and user.
+
+The ADK and answer-benchmark commands load `.env` automatically. `GOOGLE_API_KEY` authenticates Gemini; it is different from the memory HTTP server's `API_KEYS`. Store credentials in the ignored `.env` or your process environment. An already-configured Vertex AI environment is also supported with `GOOGLE_GENAI_USE_VERTEXAI=true`.
+
+Atlas uses Memlayer directly in-process. It does not require the HTTP server, Docker, or TrueForge. This command starts a terminal chatbot, not a web chat UI.
+
+### Sessions and reviewed lessons
+
+| Command | Effect |
+| --- | --- |
+| `/session NAME` | Switch sessions while retaining the same user's shared history |
+| `/reflections` | List pending preference/lesson proposals and their IDs |
+| `/accept ID` | Approve a proposed lesson for future guidance |
+| `/reject ID` | Record rejection and exclude it from guidance |
+| `/exit` | Close the chatbot |
+
+Try “Keep your answers concise and focus on working implementations.” Atlas may propose a lesson grounded in an exact quote from that message. Run `/reflections`, inspect the proposed text, and pass the returned `ep_...` ID to `/accept` or `/reject`. The model cannot approve its own proposals. Extraction is model-driven; every message does not necessarily produce a proposal.
+
+Profile facts, indexed exchanges, episodes, and review decisions survive restart in `MEMLAYER_DB`. Keep the same database, tenant, and user to retain continuity. The CLI's recent working-turn cache is in-memory and resets on restart; durable historical retrieval still works. The HTTP service uses its own `DATABASE_PATH` and Redis configuration, separate from the Atlas CLI defaults.
+
+### Customize the persona
+
+Edit `persona.yaml` to change Atlas's name, purpose, relationship, voice, or principles. Increment its `version` and restart the chatbot. For a separate persona, copy the file and set `ADK_PERSONA_PATH=./my-persona.yaml` in `.env`.
+
+Approved lessons personalize context without rewriting the persona. See [Atlas persona and review workflow](docs/atlas-persona.md) for the schema, boundaries, and review limits.
+
+### Optional semantic embeddings
+
+The default `hash` provider is local. To use Gemini semantic embeddings, change both settings in `.env`:
+
+```dotenv
+MEMLAYER_EMBEDDINGS=gemini
+MEMLAYER_DB=data/adk-gemini.sqlite
+```
+
+Restart `pnpm adk:dev`. Switching embedding provider or dimensions requires a **separate database file**. The new database starts without memories from the old file. Gemini generation and embedding calls incur provider usage.
+
+## Run LoCoMo benchmarks
+
+Download the checksum-pinned dataset once. It is saved at `data/locomo10.json` and is not committed to this repository.
+
+```bash
+pnpm bench:locomo:download
+pnpm bench:locomo --mode hybrid --out reports/hybrid.json
+pnpm bench:locomo --mode bm25 --out reports/bm25.json
+pnpm bench:locomo --mode vector --out reports/vector.json
+pnpm bench:locomo --mode hybrid-rerank --out reports/rerank.json
+```
+
+These commands measure annotated evidence retrieval, not answer accuracy. JSON reports include Recall@1/5/10, MRR, precision@10, category results, exclusion counts, and question-level evidence IDs. `hybrid-rerank` uses lexical coverage reranking, not a learned cross-encoder. Use `--data /path/to/locomo10.json` for an existing copy or `--limit 20` for a small subset in dataset order.
+
+With Google credentials configured, evaluate answers separately:
+
+```bash
+pnpm bench:adk --limit 20 --mode bm25 --out reports/adk-small.json
+# Equivalent answer-evaluation entry point:
+pnpm bench:locomo:answers --limit 20 --out reports/answers-small.json
+# Optional semantic retrieval plus Gemini answer generation:
+pnpm bench:adk --limit 20 --embeddings gemini --out reports/adk-semantic-small.json
+```
+
+Each eligible question runs the same model with memory and a no-history/no-tools baseline. Reports include normalized exact match, token F1, latency, and failures; these string metrics are not the official LoCoMo answer evaluator. Trials use fresh ADK sessions, read-only tools, and no Atlas persona by default. Evaluation questions and answers are not persisted as chatbot memories.
+
+Offline hash-embedding Recall@10 baselines: **55.21% BM25**, **46.60% hybrid**, and **48.91% hybrid with lexical reranking**, across 1,533 scored questions. See [baseline results](reports/baseline.json) and [evaluation methodology](docs/adk-locomo.md) for exclusions and limitations. Live Gemini answer quality and persona consistency still require credentialed validation.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| SQLite unavailable or unsupported Node option | Use Node >=22.13, preferably 24 |
+| Frozen-lockfile install fails | Use pnpm 11.25.0 and pull the latest files |
+| Atlas asks for credentials | Set a nonempty `GOOGLE_API_KEY` in `.env`; run from the repository root |
+| Google authentication or quota error | Check the key, selected model access, and provider quota/billing |
+| Embedding metadata mismatch | Choose a new `MEMLAYER_DB` for the new provider |
+| Dataset missing | Run `pnpm bench:locomo:download` or pass `--data` |
+| No pending reflection | Give explicit feedback; proposals are model-driven |
+| History missing | Match the previous database, tenant, and user |
 
 ## Architecture
 
@@ -84,10 +206,10 @@ One local run on Node v22.14.0 with the embedded Redis store, SQLite, the hashin
 
 ## Run locally
 
-Node 20+ and pnpm.
+Node >=22.13 and pnpm 11.25.0. This section starts the HTTP memory service; use `pnpm adk:dev` for Atlas.
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm test
 pnpm bench
 pnpm example
@@ -191,6 +313,3 @@ SQLite tables map directly: `profile_facts`, `documents`, `chunks`, `episodes`, 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-# Google ADK and long-term memory evaluation
-
-The optional [ADK chatbot and LoCoMo harness](docs/adk-locomo.md) add persistent cross-session memory tools, BM25/vector/hybrid retrieval comparisons, and a separate Gemini answer evaluation. Start with `pnpm adk:dev`, run `pnpm bench:locomo:download`, then `pnpm bench:locomo`. Google credentials are required for live chat and answer evaluation; retrieval benchmarks default to offline hash embeddings. See `reports/baseline.json` for measured retrieval results.
