@@ -1,5 +1,7 @@
 # Atlas persona
 
+Atlas also supports [profile adaptation and trusted entitlements](profile-entitlements.md). The CLI loads an explicit local policy, and SDK callers must supply a trusted authorization provider. Model tools and host reviews enforce those grants.
+
 Atlas is a consistent AI engineering partner, not a claim of consciousness. Its name, purpose, relationship, voice, and principles live in the versioned `persona.yaml`. The local chatbot loads Atlas by default; `ADK_PERSONA_PATH` can point to another validated YAML persona. Increment its semantic version when editing identity or principles. Duplicate keys, aliases, unknown fields, oversized files, and invalid versions are rejected.
 
 ```bash

@@ -76,6 +76,14 @@ Edit `persona.yaml` to change Atlas's name, purpose, relationship, voice, or pri
 
 Approved lessons personalize context without rewriting the persona. See [Atlas persona and review workflow](docs/atlas-persona.md) for the schema, boundaries, and review limits.
 
+### Adapt to profiles and entitlements
+
+Atlas recognizes profile settings for `language`, `verbosity`, `expertise`, `working_style`, and `preferred_role`. Only validated values affect presentation; core principles stay in `persona.yaml`.
+
+The local CLI uses `config/entitlements.local.json` for tools, permitted models/persona roles, writes, trusted ACL roles, and the initial memory-excerpt budget. Set `ADK_ENTITLEMENTS_PATH=./my-policy.json` to use another administrative file. These grants never come from user profiles or lessons. SDK callers must provide a trusted authorization provider; missing authority is denied.
+
+See [profile and entitlement setup](docs/profile-entitlements.md) for a read-only example, supported preferences, host integration, revocation behavior, and API migration.
+
 ### Optional semantic embeddings
 
 The default `hash` provider is local. To use Gemini semantic embeddings, change both settings in `.env`:

@@ -1,16 +1,21 @@
 import { z } from 'zod';
+import { preferenceSettingSchema } from './preferences.js';
+import { requireCapability } from './authorization.js';
+import type { AuthorizationProvider } from './authorization.js';
 import type { MemoryService } from '../service.js';
 import type { MemoryIdentity } from './adapter.js';
 
 export const proposalSchema = z.object({
   kind:z.enum(['preference','lesson']), text:z.string().trim().min(1).max(1000),
   sourceQuote:z.string().trim().min(8).max(2000),
+  setting:preferenceSettingSchema.optional(),
 }).strict();
 export type ReflectionProposal = z.infer<typeof proposalSchema>;
 const reviewKey = (id:string) => `atlas.review.${id}`;
 
 /** Proposals are grounded in the current user message, not the model's own reply. */
-export async function proposeReflection(memory: MemoryService, identity: MemoryIdentity, input: ReflectionProposal, userMessage: string) {
+export async function proposeReflection(memory: MemoryService, identity: MemoryIdentity, input: ReflectionProposal, userMessage: string, authorization?:AuthorizationProvider) {
+  await requireCapability(authorization,identity,'propose_lesson');
   const proposal = proposalSchema.parse(input);
   if (!userMessage.includes(proposal.sourceQuote)) throw new Error('Reflection quote must appear verbatim in the current user message');
   const episode = await memory.recordEpisode(identity.tenantId,{
@@ -18,18 +23,24 @@ export async function proposeReflection(memory: MemoryService, identity: MemoryI
   });
   return {status:'pending_review',proposalId:episode.id};
 }
-export async function pendingReflections(memory: MemoryService, identity: MemoryIdentity) {
+export async function pendingReflections(memory: MemoryService, identity: MemoryIdentity, authorization?:AuthorizationProvider) {
+  await requireCapability(authorization,identity,'review_lessons');
+  await requireCapability(authorization,identity,'get_profile');
   const profile = await memory.getProfile(identity.tenantId,identity.userId);
   const reviewed = new Set(profile.facts.map(f=>f.key));
   const proposals = await memory.listEpisodes(identity.tenantId,{userId:identity.userId,type:'atlas_reflection_proposal',limit:200});
+  await requireCapability(authorization,identity,'review_lessons');
+  await requireCapability(authorization,identity,'get_profile');
   return proposals.filter(p=>!reviewed.has(reviewKey(p.id)));
 }
 /** Host-only API: never exposed as a model-callable tool. */
-export async function reviewReflection(memory: MemoryService, identity: MemoryIdentity, proposalId:string, decision:'accepted'|'rejected') {
+export async function reviewReflection(memory: MemoryService, identity: MemoryIdentity, proposalId:string, decision:'accepted'|'rejected', authorization?:AuthorizationProvider) {
+  await requireCapability(authorization,identity,'review_lessons');
   if (!['accepted','rejected'].includes(decision)) throw new Error('Invalid reflection decision');
-  const proposal = (await pendingReflections(memory,identity)).find(p=>p.id===proposalId);
+  const proposal = (await pendingReflections(memory,identity,authorization)).find(p=>p.id===proposalId);
   if (!proposal) throw new Error('Pending proposal not found for this identity (only the latest 200 are available)');
   const content = proposalSchema.parse(proposal.payload);
+  await requireCapability(authorization,identity,'review_lessons');
   await memory.setProfileFact(identity.tenantId,identity.userId,{
     key:reviewKey(proposalId),type:'json',value:{decision,...content},
   });
