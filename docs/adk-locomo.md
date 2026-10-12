@@ -1,5 +1,7 @@
 # Google ADK + Memlayer + LoCoMo
 
+The chatbot uses the versioned [Atlas persona](atlas-persona.md), with profile/history context and host-reviewed lesson proposals. Answer benchmarks remain persona-neutral by default.
+
 The optional TypeScript adapter uses Google ADK 2.2.1 and Gemini for orchestration. Memlayer owns historical knowledge, profiles, recent working memory, and episodic records. ADK sessions are intentionally ephemeral; each invocation receives recent Memlayer turns and can call scoped memory tools. Profiles, indexed exchanges, and episodes survive process restarts in SQLite. Recent working turns require Redis for persistence across process restarts; the default in-memory Redis substitute does not persist them.
 
 ## Run the chatbot

@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
-COPY tsconfig.json vitest.config.ts ./
+COPY tsconfig.json vitest.config.ts persona.yaml ./
 COPY src src
 COPY examples examples
 
