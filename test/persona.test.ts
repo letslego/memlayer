@@ -1,9 +1,10 @@
+import { TestAdapter as MemlayerAdapter, testAuthorization } from './authorization-helper.js';
 import { expect, it } from 'vitest';
 import { BaseLlm } from '@google/adk';
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk';
 import { loadPersona, personaInstruction } from '../src/adk/persona.js';
 import { approvedReflections, pendingReflections, proposeReflection, reviewReflection } from '../src/adk/reflection.js';
-import { MemlayerAdapter, runAdkAnswer } from '../src/adk/adapter.js';
+import { runAdkAnswer } from '../src/adk/adapter.js';
 import { testMemory } from './helpers.js';
 
 class InstructionModel extends BaseLlm {
@@ -30,20 +31,20 @@ it('grounds proposals, requires identity-scoped host review, and blocks forged a
   const memory = await testMemory();const identity={tenantId:'one',userId:'a'};
   try {
     const proposal={kind:'preference' as const,text:'Keep answers concise.',sourceQuote:'Keep your answers concise.'};
-    await expect(proposeReflection(memory,identity,proposal,'Not what I said')).rejects.toThrow('verbatim');
-    const pending=await proposeReflection(memory,identity,proposal,proposal.sourceQuote);
-    expect(await pendingReflections(memory,identity)).toHaveLength(1);
+    await expect(proposeReflection(memory,identity,proposal,'Not what I said',testAuthorization(identity))).rejects.toThrow('verbatim');
+    const pending=await proposeReflection(memory,identity,proposal,proposal.sourceQuote,testAuthorization(identity));
+    expect(await pendingReflections(memory,identity,testAuthorization(identity))).toHaveLength(1);
     expect(approvedReflections((await memory.getProfile('one','a')).facts)).toEqual([]);
-    await expect(reviewReflection(memory,{tenantId:'one',userId:'b'},pending.proposalId,'accepted')).rejects.toThrow('not found');
+    await expect(reviewReflection(memory,{tenantId:'one',userId:'b'},pending.proposalId,'accepted',testAuthorization({tenantId:'one',userId:'b'}))).rejects.toThrow('not found');
     await new MemlayerAdapter(memory,identity).rememberFact('tone','Direct');
     await expect(new MemlayerAdapter(memory,identity).rememberFact('atlas.review.forged','accepted')).rejects.toThrow('reserved');
-    await reviewReflection(memory,identity,pending.proposalId,'accepted');
-    expect(await pendingReflections(memory,identity)).toHaveLength(0);
+    await reviewReflection(memory,identity,pending.proposalId,'accepted',testAuthorization(identity));
+    expect(await pendingReflections(memory,identity,testAuthorization(identity))).toHaveLength(0);
     expect(approvedReflections((await memory.getProfile('one','a')).facts)[0]!.text).toBe(proposal.text);
-    const rejected=await proposeReflection(memory,identity,proposal,proposal.sourceQuote);
-    await reviewReflection(memory,identity,rejected.proposalId,'rejected');
+    const rejected=await proposeReflection(memory,identity,proposal,proposal.sourceQuote,testAuthorization(identity));
+    await reviewReflection(memory,identity,rejected.proposalId,'rejected',testAuthorization(identity));
     expect((await new MemlayerAdapter(memory,identity).profile()).approvedLessons).toHaveLength(1);
-    expect(new MemlayerAdapter(memory,identity).tools(true,proposal.sourceQuote).map(t=>t.name)).not.toContain('propose_lesson');
+    expect((await new MemlayerAdapter(memory,identity).tools(true,proposal.sourceQuote)).map(t=>t.name)).not.toContain('propose_lesson');
   } finally {await memory.close();}
 });
 it('injects continuity into the real ADK runner while leaving evaluation neutral',async()=>{
@@ -57,7 +58,7 @@ it('injects continuity into the real ADK runner while leaving evaluation neutral
     expect(model.instructions[0]).toContain('Atlas v1.0.0');
     expect(model.instructions[0]).toContain('Amitabha');
     expect(model.instructions[0]).toContain('PostgreSQL');
-    await runAdkAnswer({question:'Where is Princeton?',model});
+    await runAdkAnswer({question:'Where is Princeton?',model,authorization:testAuthorization()});
     expect(model.instructions[1]).not.toContain('AUTHORITATIVE PERSONA');
   } finally {await memory.close();}
 });

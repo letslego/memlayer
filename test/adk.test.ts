@@ -1,8 +1,9 @@
+import { TestAdapter as MemlayerAdapter, testAuthorization } from './authorization-helper.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MemlayerAdapter, runAdkAnswer } from '../src/adk/adapter.js';
+import { runAdkAnswer } from '../src/adk/adapter.js';
 import { BaseLlm } from '@google/adk';
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk';
 import { openMemoryService } from '../src/service.js';
@@ -48,7 +49,7 @@ describe('ADK memory adapter',()=>{
       expect(await c.recall('favorite gemstone sapphire')).toEqual([]);
       expect((await b.profile()).facts).toEqual([]);
       expect((await memory.getWorkingMemory('one',b.sessionKey('session'))).turns).toEqual([]);
-      expect(a.tools(true).map(t=>t.name)).not.toContain('remember_fact');
+      expect((await a.tools(true)).map(t=>t.name)).not.toContain('remember_fact');
       expect(a.sessionKey('session')).not.toBe(b.sessionKey('session'));
     } finally {await memory.close();}
   });

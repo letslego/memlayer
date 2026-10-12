@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "roles": [],
+  "entitlements": {
+    "capabilities": ["recall_memory", "get_profile", "remember_fact", "propose_lesson", "persist_chat", "review_lessons"],
+    "canWrite": true,
+    "allowedModels": ["gemini-2.5-flash"],
+    "allowedPersonaRoles": ["engineering_partner", "analyst", "tutor"],
+    "maxContextChars": 24000
+  }
+}

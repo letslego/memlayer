@@ -2,6 +2,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { GeminiEmbeddingProvider } from '../src/embed/gemini.js';
 import { openMemoryService } from '../src/service.js';
+import { fileAuthorizationProvider } from '../src/adk/authorization.js';
 import { loadPersona } from '../src/adk/persona.js';
 import { pendingReflections, reviewReflection } from '../src/adk/reflection.js';
 import { MemlayerAdapter, runAdkAnswer } from '../src/adk/adapter.js';
@@ -11,9 +12,11 @@ async function main() {
   const persona = await loadPersona(process.env.ADK_PERSONA_PATH || undefined);
   const memory = await openMemoryService({ databasePath: process.env.MEMLAYER_DB ?? 'data/adk.sqlite',
     embeddings: process.env.MEMLAYER_EMBEDDINGS === 'gemini' ? new GeminiEmbeddingProvider() : undefined });
-  const adapter = new MemlayerAdapter(memory, {
+  const identity = {
     tenantId: process.env.MEMLAYER_TENANT ?? 'local', userId: process.env.MEMLAYER_USER ?? 'user',
-  });
+  };
+  const authorization=fileAuthorizationProvider(process.env.ADK_ENTITLEMENTS_PATH||new URL('../config/entitlements.local.json',import.meta.url),identity);
+  const adapter=new MemlayerAdapter(memory,identity,'hybrid',authorization);
   let session = process.env.MEMLAYER_SESSION ?? 'session-1';
   const terminal = createInterface({ input: stdin, output: stdout });
   console.log(`${persona.name} v${persona.version}. /session NAME, /reflections, /accept ID, /reject ID, /exit.`);
@@ -23,10 +26,10 @@ async function main() {
       if (question === '/exit') break;
       if (question.startsWith('/session ')) { const next = question.slice(9).trim(); adapter.sessionKey(next); session = next; continue; }
       if (!question.trim()) continue;
-      if (question === '/reflections') { console.log(await pendingReflections(memory,adapter.identity)); continue; }
+      if (question === '/reflections') { console.log(await pendingReflections(memory,adapter.identity,authorization)); continue; }
       if (/^\/(accept|reject) /.test(question)) {
         const [command,id] = question.split(/\s+/);
-        try { console.log(await reviewReflection(memory,adapter.identity,id??'',command==='/accept'?'accepted':'rejected')); }
+        try { console.log(await reviewReflection(memory,adapter.identity,id??'',command==='/accept'?'accepted':'rejected',authorization)); }
         catch(error) { console.error(error instanceof Error ? error.message : 'Review failed'); }
         continue;
       }

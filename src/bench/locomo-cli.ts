@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import { GeminiEmbeddingProvider } from '../embed/gemini.js';
 import { retryTransient } from '../adk/retry.js';
 import { openMemoryService } from '../service.js';
+import type { AuthorizationProvider } from '../adk/authorization.js';
 import { DEFAULT_MODEL, MemlayerAdapter, runAdkAnswer } from '../adk/adapter.js';
 import { average, answerScore, evidenceIds, ingestSample, parseLocomo, retrieve, scoreEvidence } from './locomo.js';
 import type { Metrics } from './locomo.js';
@@ -61,13 +62,15 @@ async function main() {
         let answers: AnswerPair | undefined;
         // Adversarial questions have no ordinary reference answer; don't invent one.
         if (values.answers && qa.category !== 5 && qa.answer !== undefined) {
+          const authorization:AuthorizationProvider=async()=>({tenantId:sample.id,userId:'benchmark',roles:[],entitlements:{capabilities:['recall_memory','get_profile'],canWrite:false,allowedModels:[values.model],allowedPersonaRoles:['engineering_partner'],maxContextChars:24000}});
           const pair = {} as AnswerPair;
           for (const enabled of [false,true]) {
             const label = enabled ? 'memory' : 'noMemory';
             const t0 = performance.now();
             try {
               const prediction = await retryTransient(()=>runAdkAnswer({ question: qa.question, model: values.model,
-                adapter: enabled ? new MemlayerAdapter(memory,{tenantId:sample.id,userId:'benchmark'},mode) : undefined,
+                adapter: enabled ? new MemlayerAdapter(memory,{tenantId:sample.id,userId:'benchmark'},mode,authorization) : undefined,
+                authorization:enabled?undefined:authorization,
                 context: enabled ? JSON.stringify(hits.map(h=>({id:h.source,text:h.text}))) : undefined }));
               pair[label] = { prediction, ...answerScore(prediction,qa.answer), latencyMs:performance.now()-t0 };
             } catch { answerFailures++; pair[label] = { error: 'model_call_failed', exactMatch:0, tokenF1:0, latencyMs:performance.now()-t0 }; }

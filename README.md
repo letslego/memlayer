@@ -76,6 +76,75 @@ Edit `persona.yaml` to change Atlas's name, purpose, relationship, voice, or pri
 
 Approved lessons personalize context without rewriting the persona. See [Atlas persona and review workflow](docs/atlas-persona.md) for the schema, boundaries, and review limits.
 
+### Adapt to profiles and entitlements
+
+Atlas recognizes profile settings for `language`, `verbosity`, `expertise`, `working_style`, and `preferred_role`. Only validated values affect presentation; core principles stay in `persona.yaml`.
+
+The local CLI uses `config/entitlements.local.json` for tools, permitted models/persona roles, writes, trusted ACL roles, and the initial memory-excerpt budget. Set `ADK_ENTITLEMENTS_PATH=./my-policy.json` to use another administrative file. These grants never come from user profiles or lessons. SDK callers must provide a trusted authorization provider; missing authority is denied.
+
+See [profile and entitlement setup](docs/profile-entitlements.md) for a read-only example, supported preferences, host integration, revocation behavior, and API migration.
+
+To try different entitlements locally:
+
+```bash
+cp config/entitlements.local.json config/my-policy.json
+```
+
+Set `ADK_ENTITLEMENTS_PATH=./config/my-policy.json` in `.env`, then edit that policy. For a read-only analyst/tutor configuration, use:
+
+```json
+{
+  "schemaVersion": 1,
+  "roles": [],
+  "entitlements": {
+    "capabilities": ["recall_memory", "get_profile"],
+    "canWrite": false,
+    "allowedModels": ["gemini-2.5-flash"],
+    "allowedPersonaRoles": ["analyst", "tutor"],
+    "maxContextChars": 8000
+  }
+}
+```
+
+Run `pnpm adk:dev`. This user can read authorized memories and receive answers, but cannot store facts, propose/review lessons, or save new exchanges. The first permitted role is the fallback; an existing `preferred_role` is used only if permitted. Keep `ADK_MODEL` consistent with `allowedModels`. Policy edits are reread during execution; changes abort an in-flight turn, so submit your message again after updating the policy.
+
+Set profile facts with the existing Memlayer SDK, or explicitly ask Atlas to remember them when `remember_fact` is allowed:
+
+| Profile key | Supported values |
+| --- | --- |
+| `language` | `English`, `Bengali`, `Hindi`, `Spanish` |
+| `verbosity` | `concise`, `balanced`, `detailed` |
+| `expertise` | `beginner`, `intermediate`, `advanced` |
+| `working_style` | `direct`, `collaborative`, `socratic` |
+| `preferred_role` | `engineering_partner`, `analyst`, `tutor` |
+
+For example, ask: “Remember my `verbosity` as `concise`, my `expertise` as `advanced`, and my `working_style` as `direct`.” Model-driven extraction is not guaranteed; host applications can set these exact keys with `setProfileFact`. Approved structured preference settings override profile values, but cannot grant permissions or weaken the core persona.
+
+**SDK migration:** the ADK adapter requires an authorization provider, `adapter.tools()` must now be awaited, and standalone `runAdkAnswer` calls must pass `authorization`. Here is an explicit local-policy example:
+
+```ts
+import { openMemoryService } from './src/service.js';
+import { MemlayerAdapter, runAdkAnswer } from './src/adk/adapter.js';
+import { fileAuthorizationProvider } from './src/adk/authorization.js';
+
+const memory = await openMemoryService({ databasePath: 'data/adk.sqlite' });
+try {
+  const identity = { tenantId: 'local', userId: 'user' };
+  const authorization = fileAuthorizationProvider('./config/entitlements.local.json', identity);
+  const adapter = new MemlayerAdapter(memory, identity, 'hybrid', authorization);
+  await memory.setProfileFact(identity.tenantId, identity.userId, {
+    key: 'verbosity', type: 'string', value: 'concise',
+  });
+  console.log(await runAdkAnswer({
+    question: 'Help me plan an AI service.', adapter, persistSession: 'project-1',
+  }));
+} finally {
+  await memory.close();
+}
+```
+
+The direct SDK fact write above is a privileged host operation, not a model tool. For hosted users, replace the file provider with fresh grants from verified authentication and your IAM/subscription service. Never trust request-body permissions, profile role claims, or a user-writable policy file. This implementation does not connect a billing vendor or implement login. `maxContextChars` limits the initial historical-memory excerpt, not the complete model request or later tool responses.
+
 ### Optional semantic embeddings
 
 The default `hash` provider is local. To use Gemini semantic embeddings, change both settings in `.env`:

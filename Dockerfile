@@ -10,6 +10,7 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.json vitest.config.ts persona.yaml ./
 COPY src src
 COPY examples examples
+COPY config config
 
 ENV HOST=0.0.0.0 \
     PORT=43123 \
