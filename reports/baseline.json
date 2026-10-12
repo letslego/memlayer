@@ -1,0 +1,641 @@
+{
+  "note": "Offline retrieval baselines; Gemini answer and embedding runs were not performed.",
+  "datasetCommit": "3eb6f2c585f5e1699204e3c3bdf7adc5c28cb376",
+  "reports": [
+    {
+      "schemaVersion": 1,
+      "answerSummary": {
+        "memory": {
+          "attempts": 0,
+          "failures": 0,
+          "exactMatch": null,
+          "tokenF1": null
+        },
+        "noMemory": {
+          "attempts": 0,
+          "failures": 0,
+          "exactMatch": null,
+          "tokenF1": null
+        }
+      },
+      "datasetSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "embedding": "hashing-trick-v1",
+      "dimensions": 128,
+      "hnswSeed": 42,
+      "mode": "bm25",
+      "model": null,
+      "answerEvaluator": null,
+      "questions": 1986,
+      "scoredQuestions": 1533,
+      "answerFailures": 0,
+      "overall": {
+        "recall1": 0.2813158375291447,
+        "recall5": 0.4793108512257817,
+        "recall10": 0.5521173227908339,
+        "precision10": 0.0669928245270704,
+        "mrr": 0.40597412480974104
+      },
+      "byCategory": {
+        "1": {
+          "questions": 282,
+          "scoredQuestions": 280,
+          "metrics": {
+            "recall1": 0.055085162853019995,
+            "recall5": 0.1603263502370646,
+            "recall10": 0.23224360278401646,
+            "precision10": 0.0671428571428571,
+            "mrr": 0.23675595238095246
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "2": {
+          "questions": 321,
+          "scoredQuestions": 321,
+          "metrics": {
+            "recall1": 0.33099688473520245,
+            "recall5": 0.5843717549325025,
+            "recall10": 0.6523883696780892,
+            "precision10": 0.07196261682243,
+            "mrr": 0.46070686841714886
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "3": {
+          "questions": 96,
+          "scoredQuestions": 92,
+          "metrics": {
+            "recall1": 0.07518115942028986,
+            "recall5": 0.2171248934356351,
+            "recall10": 0.26758312020460356,
+            "precision10": 0.04130434782608698,
+            "mrr": 0.2010093167701863
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "4": {
+          "questions": 841,
+          "scoredQuestions": 840,
+          "metrics": {
+            "recall1": 0.3603174603174603,
+            "recall5": 0.5742063492063493,
+            "recall10": 0.6515873015873016,
+            "precision10": 0.0678571428571435,
+            "mrr": 0.4639129818594101
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "5": {
+          "questions": 446,
+          "scoredQuestions": 0,
+          "metrics": null,
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        }
+      },
+      "skipped": {
+        "no_evidence": 4,
+        "adversarial": 446,
+        "unresolved_evidence": 3
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "answerSummary": {
+        "memory": {
+          "attempts": 0,
+          "failures": 0,
+          "exactMatch": null,
+          "tokenF1": null
+        },
+        "noMemory": {
+          "attempts": 0,
+          "failures": 0,
+          "exactMatch": null,
+          "tokenF1": null
+        }
+      },
+      "datasetSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "embedding": "hashing-trick-v1",
+      "dimensions": 128,
+      "hnswSeed": 42,
+      "mode": "hybrid",
+      "model": null,
+      "answerEvaluator": null,
+      "questions": 1986,
+      "scoredQuestions": 1533,
+      "answerFailures": 0,
+      "overall": {
+        "recall1": 0.20604766328836774,
+        "recall5": 0.3845630282000721,
+        "recall10": 0.4660348366623019,
+        "precision10": 0.055903457273319974,
+        "mrr": 0.31696512699448065
+      },
+      "byCategory": {
+        "1": {
+          "questions": 282,
+          "scoredQuestions": 280,
+          "metrics": {
+            "recall1": 0.041503813646670794,
+            "recall5": 0.10884392393320963,
+            "recall10": 0.17454493240677463,
+            "precision10": 0.0510714285714285,
+            "mrr": 0.18374858276644002
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "2": {
+          "questions": 321,
+          "scoredQuestions": 321,
+          "metrics": {
+            "recall1": 0.2601246105919003,
+            "recall5": 0.4576843198338525,
+            "recall10": 0.5568535825545172,
+            "precision10": 0.06137071651090342,
+            "mrr": 0.3734856351678781
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "3": {
+          "questions": 96,
+          "scoredQuestions": 92,
+          "metrics": {
+            "recall1": 0.08242753623188405,
+            "recall5": 0.1664002557544757,
+            "recall10": 0.2388640238704177,
+            "precision10": 0.03586956521739132,
+            "mrr": 0.157651828847481
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "4": {
+          "questions": 841,
+          "scoredQuestions": 840,
+          "metrics": {
+            "recall1": 0.2537698412698413,
+            "recall5": 0.47242063492063496,
+            "recall10": 0.5533730158730159,
+            "precision10": 0.0576190476190481,
+            "mrr": 0.3572203325774752
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "5": {
+          "questions": 446,
+          "scoredQuestions": 0,
+          "metrics": null,
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        }
+      },
+      "skipped": {
+        "no_evidence": 4,
+        "adversarial": 446,
+        "unresolved_evidence": 3
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "answerSummary": {
+        "memory": {
+          "attempts": 0,
+          "failures": 0,
+          "exactMatch": null,
+          "tokenF1": null
+        },
+        "noMemory": {
+          "attempts": 0,
+          "failures": 0,
+          "exactMatch": null,
+          "tokenF1": null
+        }
+      },
+      "datasetSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "embedding": "hashing-trick-v1",
+      "dimensions": 128,
+      "hnswSeed": 42,
+      "mode": "hybrid-rerank",
+      "model": null,
+      "answerEvaluator": null,
+      "questions": 1986,
+      "scoredQuestions": 1533,
+      "answerFailures": 0,
+      "overall": {
+        "recall1": 0.25335174473829924,
+        "recall5": 0.4187078153597999,
+        "recall10": 0.4890683009201004,
+        "precision10": 0.059360730593606845,
+        "mrr": 0.36128739166899615
+      },
+      "byCategory": {
+        "1": {
+          "questions": 282,
+          "scoredQuestions": 280,
+          "metrics": {
+            "recall1": 0.053855004122861275,
+            "recall5": 0.1339694067419631,
+            "recall10": 0.19330020804174955,
+            "precision10": 0.058214285714285614,
+            "mrr": 0.21658588435374165
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "2": {
+          "questions": 321,
+          "scoredQuestions": 321,
+          "metrics": {
+            "recall1": 0.3115264797507788,
+            "recall5": 0.5070093457943924,
+            "recall10": 0.59527518172378,
+            "precision10": 0.06604361370716519,
+            "mrr": 0.421955199525293
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "3": {
+          "questions": 96,
+          "scoredQuestions": 92,
+          "metrics": {
+            "recall1": 0.08850170502983801,
+            "recall5": 0.1606990622335891,
+            "recall10": 0.23044543904518325,
+            "precision10": 0.03586956521739132,
+            "mrr": 0.18252674258109036
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "4": {
+          "questions": 841,
+          "scoredQuestions": 840,
+          "metrics": {
+            "recall1": 0.3156746031746032,
+            "recall5": 0.5081349206349207,
+            "recall10": 0.5753968253968255,
+            "precision10": 0.05976190476190528,
+            "mrr": 0.4059160052910051
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "5": {
+          "questions": 446,
+          "scoredQuestions": 0,
+          "metrics": null,
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        }
+      },
+      "skipped": {
+        "no_evidence": 4,
+        "adversarial": 446,
+        "unresolved_evidence": 3
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "answerSummary": {
+        "memory": {
+          "attempts": 0,
+          "failures": 0,
+          "exactMatch": null,
+          "tokenF1": null
+        },
+        "noMemory": {
+          "attempts": 0,
+          "failures": 0,
+          "exactMatch": null,
+          "tokenF1": null
+        }
+      },
+      "datasetSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "embedding": "hashing-trick-v1",
+      "dimensions": 128,
+      "hnswSeed": 42,
+      "mode": "vector",
+      "model": null,
+      "answerEvaluator": null,
+      "questions": 1986,
+      "scoredQuestions": 1533,
+      "answerFailures": 0,
+      "overall": {
+        "recall1": 0.022396173081104583,
+        "recall5": 0.027179821700369644,
+        "recall10": 0.027832137421178516,
+        "precision10": 0.0029354207436399216,
+        "mrr": 0.025820830615351162
+      },
+      "byCategory": {
+        "1": {
+          "questions": 282,
+          "metrics": {
+            "recall1": 0.002976190476190476,
+            "recall5": 0.004166666666666666,
+            "recall10": 0.004166666666666666,
+            "precision10": 0.0010714285714285715,
+            "mrr": 0.008333333333333331
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "2": {
+          "questions": 321,
+          "metrics": {
+            "recall1": 0.01557632398753894,
+            "recall5": 0.018691588785046728,
+            "recall10": 0.018691588785046728,
+            "precision10": 0.0018691588785046728,
+            "mrr": 0.016614745586708203
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "3": {
+          "questions": 96,
+          "metrics": {
+            "recall1": 0,
+            "recall5": 0,
+            "recall10": 0,
+            "precision10": 0,
+            "mrr": 0
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "4": {
+          "questions": 841,
+          "metrics": {
+            "recall1": 0.033928571428571426,
+            "recall5": 0.04107142857142857,
+            "recall10": 0.042261904761904764,
+            "precision10": 0.004285714285714288,
+            "mrr": 0.03799603174603175
+          },
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        },
+        "5": {
+          "questions": 446,
+          "metrics": null,
+          "answers": {
+            "memory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            },
+            "noMemory": {
+              "attempts": 0,
+              "failures": 0,
+              "exactMatch": null,
+              "tokenF1": null
+            }
+          }
+        }
+      },
+      "skipped": {
+        "no_evidence": 4,
+        "adversarial": 446,
+        "unresolved_evidence": 3
+      }
+    }
+  ]
+}

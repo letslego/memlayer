@@ -125,6 +125,7 @@ export class MemoryService {
       m: config.hnswM,
       efConstruction: config.hnswEfConstruction,
       efSearch: config.hnswEfSearch,
+      seed: config.hnswSeed,
     });
     this.knowledge.loadFromDisk();
   }
@@ -271,7 +272,7 @@ export class MemoryService {
     const userId = query.userId ? requireId(query.userId, 'userId') : undefined;
     const roles = query.roles?.map((role) => requireLabel(role, 'role'));
     return this.run(opts, 'searchKnowledge', () =>
-      this.knowledge.search(tenant, query.query, topK, userId, roles),
+      this.knowledge.search(tenant, query.query, topK, userId, roles, query.mode),
     );
   }
 

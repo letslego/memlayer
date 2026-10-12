@@ -1,0 +1,12 @@
+[
+  {
+    "sample_id": "ci-fixture",
+    "conversation": {
+      "session_1_date_time": "8 May 2023",
+      "session_1": [{"dia_id":"D1:1","speaker":"Ada","text":"My favorite gemstone is sapphire."}],
+      "session_2_date_time": "9 May 2023",
+      "session_2": [{"dia_id":"D2:1","speaker":"Ben","text":"My bicycle is blue."}]
+    },
+    "qa": [{"question":"What is Ada's favorite gemstone?","answer":"sapphire","evidence":["D1:1"],"category":4}]
+  }
+]
