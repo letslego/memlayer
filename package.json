@@ -11,6 +11,7 @@
   "scripts": {
     "test": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' vitest run",
     "bench": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' node --import tsx src/bench/bench.ts",
+    "bench:conversation": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' node --import tsx src/bench/conversation-cli.ts",
     "example": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' node --import tsx examples/chat-bot.ts",
     "start": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' node --import tsx src/http/main.ts",
     "dev": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' node --import tsx src/http/main.ts",

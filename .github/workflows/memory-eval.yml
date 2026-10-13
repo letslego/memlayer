@@ -17,6 +17,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm bench:conversation --out reports/ci-conversation-routing.json
       - run: pnpm bench:locomo --data test/fixtures/locomo-smoke.json --out reports/ci-smoke.json --min-recall10 1
       - run: pnpm bench:locomo:download
       - run: pnpm bench:locomo --mode hybrid --out reports/ci-hybrid.json --min-recall10 0.45
