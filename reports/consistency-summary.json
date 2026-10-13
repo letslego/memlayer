@@ -1,0 +1,19 @@
+{
+  "scope": "atomic working appends, profile revisions, lazy coherent tenant indexes, Unicode lexical retrieval",
+  "datasetSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+  "questions": 1986,
+  "scoredQuestions": 1533,
+  "embedding": "hashing-trick-v1",
+  "dimensions": 128,
+  "hnswSeed": 42,
+  "recall10": {
+    "bm25": { "baseline": 0.5521173227908339, "current": 0.5521173227908339 },
+    "hybrid": { "baseline": 0.466034836660127, "current": 0.46538252094149296 }
+  },
+  "limitations": [
+    "Hybrid recall decreased slightly; no overall accuracy improvement claimed.",
+    "No measured production latency or live Gemini results.",
+    "Real Redis Lua integration is not exercised by offline MemoryRedis tests.",
+    "Asynchronous indexing, durable exchange outbox, hierarchical retrieval and model prompt caching remain unimplemented."
+  ]
+}

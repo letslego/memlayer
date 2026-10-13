@@ -34,6 +34,16 @@ export class IoredisPool implements RedisClient {
     return this.next().del(key);
   }
 
+  async compareAndSet(key: string, expected: Buffer | null, value: Buffer, ttlSec = 0): Promise<boolean> {
+    const script = `local cur=redis.call('GET',KEYS[1])
+      if ARGV[1]=='0' then if cur then return 0 end
+      elseif not cur or cur~=ARGV[2] then return 0 end
+      if tonumber(ARGV[4])>0 then redis.call('SET',KEYS[1],ARGV[3],'EX',ARGV[4])
+      else redis.call('SET',KEYS[1],ARGV[3]) end return 1`;
+    const result=await this.next().eval(script,1,key,expected===null?'0':'1',expected??Buffer.alloc(0),value,String(ttlSec));
+    if(result===1)this.stats.sets++;return result===1;
+  }
+
   async mgetBuffer(keys: readonly string[]): Promise<Array<Buffer | null>> {
     this.stats.mgets++;
     if (keys.length === 0) return [];

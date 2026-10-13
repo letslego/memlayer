@@ -1,22 +1,9 @@
 const MIN_TOKEN = 2;
 
-/** Alphanumeric tokenizer shared by BM25 and the hashing embedder. */
+/** Unicode lexical tokenizer shared by BM25 and the opt-in v2 hash embedder. */
 export function tokenize(text: string): string[] {
-  const out: string[] = [];
-  const lower = text.toLowerCase();
-  let start = -1;
-  for (let i = 0; i <= lower.length; i++) {
-    const code = i < lower.length ? lower.charCodeAt(i) : 0;
-    const isWord =
-      i < lower.length && ((code >= 48 && code <= 57) || (code >= 97 && code <= 122));
-    if (isWord) {
-      if (start < 0) start = i;
-    } else if (start >= 0) {
-      if (i - start >= MIN_TOKEN) out.push(lower.slice(start, i));
-      start = -1;
-    }
-  }
-  return out;
+  return (text.normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu) ?? [])
+    .filter(token => token.length >= MIN_TOKEN);
 }
 
 export function chunkText(text: string, size = 800, overlap = 120): string[] {

@@ -18,6 +18,7 @@ export interface RedisClient {
   readonly stats: RedisStats;
   getBuffer(key: string): Promise<Buffer | null>;
   setBuffer(key: string, value: Buffer, ttlSec?: number): Promise<void>;
+  compareAndSet(key: string, expected: Buffer | null, value: Buffer, ttlSec?: number): Promise<boolean>;
   del(key: string): Promise<number>;
   mgetBuffer(keys: readonly string[]): Promise<Array<Buffer | null>>;
   pipeline(): RedisPipeline;

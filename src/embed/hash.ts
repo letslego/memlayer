@@ -7,9 +7,10 @@ import { l2Normalize } from '../vector.js';
  * Swap this for a hosted embedder by passing another EmbeddingProvider.
  */
 export class HashEmbeddingProvider implements EmbeddingProvider {
-  readonly id = 'hashing-trick-v1';
+  readonly id: string;
 
-  constructor(readonly dimensions: number) {
+  constructor(readonly dimensions: number, private readonly tokenizerVersion: 'v1' | 'v2' = 'v1') {
+    this.id = `hashing-trick-${tokenizerVersion}`;
     if (!Number.isInteger(dimensions) || dimensions < 16) {
       throw new Error('embedding dimensions must be an integer >= 16');
     }
@@ -25,7 +26,11 @@ export class HashEmbeddingProvider implements EmbeddingProvider {
 
   private embedOne(text: string): Float32Array {
     const out = new Float32Array(this.dimensions);
-    const tokens = tokenize(text);
+    // Keep existing persisted v1 vectors compatible. Unicode features require
+    // an explicitly versioned provider and a separate/reindexed database.
+    const tokens = this.tokenizerVersion === 'v2'
+      ? tokenize(text)
+      : (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(token => token.length >= 2);
     if (tokens.length === 0) {
       out[0] = 1;
       return out;

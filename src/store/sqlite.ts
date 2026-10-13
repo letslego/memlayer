@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import type { Acl, AuditEvent, CapBucket, ControlScope, Episode, KillSwitchState, ProfileFact } from '../types.js';
 import { bytesToVector, vectorToBytes } from '../vector.js';
 import { isFactType, jsonClone, parseAclJson, parseJsonObject } from '../validate.js';
@@ -49,6 +49,8 @@ interface CapRow {
 type Row = Record<string, unknown>;
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS profile_revisions(tenant_id TEXT,user_id TEXT,revision INTEGER NOT NULL,PRIMARY KEY(tenant_id,user_id));
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -63,6 +65,12 @@ CREATE TABLE IF NOT EXISTS profile_facts (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (tenant_id, user_id, fact_key)
 );
+
+CREATE TRIGGER IF NOT EXISTS profile_revision_insert AFTER INSERT ON profile_facts BEGIN INSERT INTO profile_revisions VALUES(NEW.tenant_id,NEW.user_id,1) ON CONFLICT(tenant_id,user_id) DO UPDATE SET revision=revision+1; END;
+CREATE TRIGGER IF NOT EXISTS profile_revision_update AFTER UPDATE ON profile_facts BEGIN INSERT INTO profile_revisions VALUES(NEW.tenant_id,NEW.user_id,1) ON CONFLICT(tenant_id,user_id) DO UPDATE SET revision=revision+1; END;
+CREATE TRIGGER IF NOT EXISTS profile_revision_delete AFTER DELETE ON profile_facts BEGIN INSERT INTO profile_revisions VALUES(OLD.tenant_id,OLD.user_id,1) ON CONFLICT(tenant_id,user_id) DO UPDATE SET revision=revision+1; END;
+
+CREATE TABLE IF NOT EXISTS knowledge_revisions(tenant_id TEXT PRIMARY KEY,revision INTEGER NOT NULL);
 
 CREATE TABLE IF NOT EXISTS documents (
   id TEXT PRIMARY KEY,
@@ -88,6 +96,8 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_tenant ON chunks(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
+CREATE TRIGGER IF NOT EXISTS knowledge_revision_insert AFTER INSERT ON chunks BEGIN INSERT INTO knowledge_revisions VALUES(NEW.tenant_id,1) ON CONFLICT(tenant_id) DO UPDATE SET revision=revision+1; END;
+CREATE TRIGGER IF NOT EXISTS knowledge_revision_delete AFTER DELETE ON chunks BEGIN INSERT INTO knowledge_revisions VALUES(OLD.tenant_id,1) ON CONFLICT(tenant_id) DO UPDATE SET revision=revision+1; END;
 
 CREATE TABLE IF NOT EXISTS episodes (
   id TEXT PRIMARY KEY,
@@ -141,6 +151,9 @@ CREATE TABLE IF NOT EXISTS kill_switches (
 
 export class DurableStore {
   private readonly db: DatabaseSync;
+  private readonly statements=new Map<string,StatementSync>();
+  private prepare(sql:string):StatementSync { let statement=this.statements.get(sql);if(!statement){statement=this.db.prepare(sql);this.statements.set(sql,statement);}return statement; }
+  profileRevision(tenantId:string,userId:string):number {const row=this.prepare('SELECT revision FROM profile_revisions WHERE tenant_id=? AND user_id=?').get(tenantId,userId) as Row|undefined;return row?Number(row.revision):0;}
 
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -156,7 +169,7 @@ export class DurableStore {
   }
 
   ping(): number {
-    const row = rowOf(this.db.prepare('SELECT 1 AS ok').get());
+    const row = rowOf(this.prepare('SELECT 1 AS ok').get());
     return num(row, 'ok');
   }
 
@@ -181,13 +194,13 @@ export class DurableStore {
   }
 
   getMeta(key: string): string | null {
-    const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key);
+    const row = this.prepare('SELECT value FROM meta WHERE key = ?').get(key);
     if (!row) return null;
     return str(rowOf(row), 'value');
   }
 
   setMeta(key: string, value: string): void {
-    this.db
+    this
       .prepare(
         `INSERT INTO meta(key, value) VALUES (?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
@@ -196,7 +209,7 @@ export class DurableStore {
   }
 
   loadFacts(tenantId: string, userId: string): ProfileFact[] {
-    const rows = this.db
+    const rows = this
       .prepare(
         `SELECT fact_key, fact_type, value_json, updated_at
          FROM profile_facts WHERE tenant_id = ? AND user_id = ?
@@ -217,7 +230,7 @@ export class DurableStore {
   }
 
   upsertFact(tenantId: string, userId: string, fact: ProfileFact): void {
-    this.db
+    this
       .prepare(
         `INSERT INTO profile_facts(tenant_id, user_id, fact_key, fact_type, value_json, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)
@@ -230,17 +243,17 @@ export class DurableStore {
   }
 
   deleteFact(tenantId: string, userId: string, key: string): void {
-    this.db
+    this
       .prepare('DELETE FROM profile_facts WHERE tenant_id = ? AND user_id = ? AND fact_key = ?')
       .run(tenantId, userId, key);
   }
 
   insertDocument(doc: NewDocument): void {
-    const insertDoc = this.db.prepare(
+    const insertDoc = this.prepare(
       `INSERT INTO documents(id, tenant_id, title, source, acl_json, metadata_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    const insertChunk = this.db.prepare(
+    const insertChunk = this.prepare(
       `INSERT INTO chunks(id, tenant_id, document_id, ordinal, text, token_estimate, vector, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
@@ -269,17 +282,20 @@ export class DurableStore {
     });
   }
 
-  listChunks(): StoredChunk[] {
-    const rows = this.db
+  knowledgeRevision(tenantId:string):number {const row=this.prepare('SELECT revision FROM knowledge_revisions WHERE tenant_id=?').get(tenantId) as Row|undefined;return row?Number(row.revision):0;}
+
+  listChunks(tenantId?:string): StoredChunk[] {
+    const rows = this
       .prepare(
         `SELECT c.id AS id, c.tenant_id AS tenant_id, c.document_id AS document_id,
                 c.ordinal AS ordinal, c.text AS text, c.token_estimate AS token_estimate,
                 c.vector AS vector, d.title AS title, d.source AS source, d.acl_json AS acl_json
          FROM chunks c
          JOIN documents d ON d.id = c.document_id
+         ${tenantId===undefined?'':'WHERE c.tenant_id=?'}
          ORDER BY c.tenant_id, c.created_at, c.ordinal, c.id`,
       )
-      .all();
+      .all(...(tenantId===undefined?[]:[tenantId]));
     return rows.map((raw) => {
       const row = rowOf(raw);
       const vectorRaw = row.vector;
@@ -300,7 +316,7 @@ export class DurableStore {
   }
 
   insertEpisode(episode: Episode): void {
-    this.db
+    this
       .prepare(
         `INSERT INTO episodes(id, tenant_id, user_id, session_id, episode_type, summary, payload_json, occurred_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -354,14 +370,14 @@ export class DurableStore {
     const sql = `SELECT id, tenant_id, user_id, session_id, episode_type, summary, payload_json, occurred_at
       FROM episodes WHERE ${clauses.join(' AND ')}
       ORDER BY occurred_at DESC, id DESC LIMIT ?`;
-    return this.db
+    return this
       .prepare(sql)
       .all(...params)
       .map((raw) => mapEpisode(rowOf(raw)));
   }
 
   insertAudit(event: AuditEvent): void {
-    this.db
+    this
       .prepare(
         `INSERT INTO audit_log(id, tenant_id, user_id, session_id, action, tool_name, detail_json, cost_units, steps, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -398,14 +414,14 @@ export class DurableStore {
     const sql = `SELECT id, tenant_id, user_id, session_id, action, tool_name, detail_json, cost_units, steps, created_at
       FROM audit_log WHERE ${clauses.join(' AND ')}
       ORDER BY created_at DESC, id DESC LIMIT ?`;
-    return this.db
+    return this
       .prepare(sql)
       .all(...params)
       .map((raw) => mapAudit(rowOf(raw)));
   }
 
   getCap(tenantId: string, scope: ControlScope, targetId: string): CapRow | null {
-    const raw = this.db
+    const raw = this
       .prepare(
         `SELECT scope, target_id, max_steps, max_spend_units, steps_used, spend_used
          FROM control_caps WHERE tenant_id = ? AND scope = ? AND target_id = ?`,
@@ -423,7 +439,7 @@ export class DurableStore {
     maxSpendUnits: number | null,
     updatedAt: number,
   ): CapBucket {
-    this.db
+    this
       .prepare(
         `INSERT INTO control_caps(tenant_id, scope, target_id, max_steps, max_spend_units, steps_used, spend_used, updated_at)
          VALUES (?, ?, ?, ?, ?, 0, 0, ?)
@@ -446,7 +462,7 @@ export class DurableStore {
     spend: number,
     updatedAt: number,
   ): void {
-    this.db
+    this
       .prepare(
         `INSERT INTO control_caps(tenant_id, scope, target_id, max_steps, max_spend_units, steps_used, spend_used, updated_at)
          VALUES (?, ?, ?, NULL, NULL, ?, ?, ?)
@@ -459,7 +475,7 @@ export class DurableStore {
   }
 
   getKillSwitch(tenantId: string, scope: ControlScope, targetId: string): KillSwitchState | null {
-    const raw = this.db
+    const raw = this
       .prepare(
         `SELECT scope, target_id, enabled, reason, updated_at
          FROM kill_switches WHERE tenant_id = ? AND scope = ? AND target_id = ?`,
@@ -470,7 +486,7 @@ export class DurableStore {
   }
 
   upsertKillSwitch(state: KillSwitchState & { tenantId: string }): void {
-    this.db
+    this
       .prepare(
         `INSERT INTO kill_switches(tenant_id, scope, target_id, enabled, reason, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)

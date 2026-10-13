@@ -105,6 +105,7 @@ export class MemoryService {
     });
     this.working = new HotCache<WorkingBlob>(this.l1 as LRUCache<string, WorkingBlob>, redis, {
       prefix: 'ml:wm:',
+      atomic:true,
       ttlSec: config.workingTtlSec,
       empty: () => ({ v: 1, turns: [] }),
       invalidateFirst: false,
@@ -112,6 +113,7 @@ export class MemoryService {
     });
     this.profiles = new HotCache<ProfileBlob>(this.l1 as LRUCache<string, ProfileBlob>, redis, {
       prefix: 'ml:pf:',
+      version:id=>{const {tenantId,second}=splitPair(id);return this.store.profileRevision(tenantId,second);},
       ttlSec: config.profileTtlSec,
       empty: () => ({ v: 1, facts: [] }),
       invalidateFirst: true,
@@ -220,14 +222,10 @@ export class MemoryService {
       updatedAt: Date.now(),
     };
     return this.run(opts, 'setProfileFact', async () => {
-      await this.profiles.update(pairKey(tenant, user), (current) => {
-        const facts = current.facts.filter((item) => item.key !== fact.key);
-        facts.push(fact);
-        if (facts.length > this.config.profileFactLimit) {
-          throw new ValidationError(`Profile fact limit is ${this.config.profileFactLimit}`);
-        }
-        this.store.upsertFact(tenant, user, fact);
-        return { v: 1, facts };
+      this.store.transaction(()=>{
+        const current=this.store.loadFacts(tenant,user);
+        if(!current.some(f=>f.key===fact.key)&&current.length>=this.config.profileFactLimit)throw new ValidationError(`Profile fact limit is ${this.config.profileFactLimit}`);
+        this.store.upsertFact(tenant,user,fact);
       });
       return { ...fact };
     });
@@ -248,15 +246,10 @@ export class MemoryService {
     const tenant = requireId(tenantId, 'tenantId');
     const user = requireId(userId, 'userId');
     const factKey = requireFactKey(key);
-    await this.run(opts, 'forgetFact', () =>
-      this.profiles.update(pairKey(tenant, user), (current) => {
-        if (!current.facts.some((fact) => fact.key === factKey)) {
-          throw new NotFoundError('fact', factKey);
-        }
-        this.store.deleteFact(tenant, user, factKey);
-        return { v: 1, facts: current.facts.filter((fact) => fact.key !== factKey) };
-      }),
-    );
+    await this.run(opts,'forgetFact',async()=>this.store.transaction(()=>{
+      if(!this.store.loadFacts(tenant,user).some(f=>f.key===factKey))throw new NotFoundError('fact',factKey);
+      this.store.deleteFact(tenant,user,factKey);
+    }));
   }
 
   ingestDocument(tenantId: string, input: IngestDocumentInput, opts?: CallOptions): Promise<IngestResult> {

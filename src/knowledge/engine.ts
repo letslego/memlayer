@@ -38,6 +38,7 @@ function squashBm25(score: number): number {
  */
 export class KnowledgeEngine {
   private readonly tenants = new Map<string, TenantIndex>();
+  private readonly revisions=new Map<string,number>();
 
   constructor(
     private readonly store: DurableStore,
@@ -46,7 +47,7 @@ export class KnowledgeEngine {
   ) {}
 
   loadFromDisk(): void {
-    for (const row of this.store.listChunks()) this.addRow(row);
+    // Tenant indexes are hydrated lazily and refreshed from committed revisions.
   }
 
   async ingest(tenantId: string, input: IngestDocumentInput): Promise<IngestResult> {
@@ -89,20 +90,6 @@ export class KnowledgeEngine {
       createdAt,
       chunks,
     });
-    for (const chunk of chunks) {
-      this.addRow({
-        id: chunk.id,
-        tenantId,
-        documentId,
-        title,
-        source,
-        ordinal: chunk.ordinal,
-        text: chunk.text,
-        tokenEstimate: chunk.tokenEstimate,
-        vector: chunk.vector,
-        acl,
-      });
-    }
     return {
       documentId,
       chunkCount: chunks.length,
@@ -119,6 +106,7 @@ export class KnowledgeEngine {
     mode: RetrievalMode = 'hybrid',
   ): Promise<KnowledgeHit[]> {
     if (!['hybrid', 'bm25', 'vector'].includes(mode)) throw new ValidationError('Invalid retrieval mode');
+    this.refresh(tenantId);
     const index = this.tenants.get(tenantId);
     if (!index || index.chunks.length === 0) return [];
     const text = query.trim();
@@ -159,6 +147,14 @@ export class KnowledgeEngine {
     }
     ranked.sort((a, b) => b.score - a.score || (a.source ?? '').localeCompare(b.source ?? '') || a.chunkId.localeCompare(b.chunkId));
     return ranked.slice(0, topK);
+  }
+
+  private refresh(tenantId:string):void {
+    const revision=this.store.knowledgeRevision(tenantId);
+    if(this.revisions.get(tenantId)===revision)return;
+    this.tenants.delete(tenantId);
+    for(const row of this.store.listChunks(tenantId))this.addRow(row);
+    this.revisions.set(tenantId,revision);
   }
 
   private addRow(row: StoredChunk): void {
