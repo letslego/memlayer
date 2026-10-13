@@ -17,6 +17,7 @@ async function main() {
   };
   const authorization=fileAuthorizationProvider(process.env.ADK_ENTITLEMENTS_PATH||new URL('../config/entitlements.local.json',import.meta.url),identity);
   const adapter=new MemlayerAdapter(memory,identity,'hybrid',authorization);
+  const stopIndexing = memory.startIndexingWorker({ onError: () => console.error('Indexing worker failed; raw history remains available.') });
   let session = process.env.MEMLAYER_SESSION ?? 'session-1';
   const terminal = createInterface({ input: stdin, output: stdout });
   console.log(`${persona.name} v${persona.version}. /session NAME, /reflections, /accept ID, /reject ID, /exit.`);
@@ -36,6 +37,6 @@ async function main() {
       try { console.log(await runAdkAnswer({ question, adapter, persistSession: session, model: process.env.ADK_MODEL, persona })); }
       catch (error) { console.error(error instanceof Error ? error.message : 'Chat failed'); }
     }
-  } finally { terminal.close(); await memory.close(); }
+  } finally { stopIndexing(); terminal.close(); await memory.close(); }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -1,5 +1,34 @@
 export type TurnRole = 'user' | 'assistant' | 'tool' | 'system';
 
+export interface ExchangeInput {
+  userId: string;
+  sessionId: string;
+  /** Host-generated request ID; reuse the same ID and payload when retrying. */
+  requestId: string;
+  question: string;
+  answer: string;
+  topic?: string;
+  entities?: string[];
+  createdAt?: number;
+}
+export interface Exchange extends Omit<ExchangeInput, 'topic' | 'entities' | 'createdAt'> {
+  id: string;
+  tenantId: string;
+  topic: string | null;
+  entities: string[];
+  createdAt: number;
+}
+export interface ExchangeQuery {
+  userId: string;
+  query?: string;
+  sessionId?: string;
+  topic?: string;
+  entity?: string;
+  since?: number;
+  until?: number;
+  limit?: number;
+}
+
 export interface Turn {
   id: string;
   role: TurnRole;
@@ -81,6 +110,7 @@ export interface KnowledgeQuery {
 }
 
 export interface KnowledgeHit {
+  exchange?: { id: string; sessionId: string; occurredAt: number; topic: string | null; entities: string[] };
   chunkId: string;
   documentId: string;
   title: string;

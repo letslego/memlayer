@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   );
 
   console.log(`memlayer bench  node=${process.version}  redis=memory  db=sqlite  embed=hashing-trick-v1  dim=128`);
-  console.log('hot path: getSession and getProfile are L1 hits after warmup; appendTurn writes through; searchKnowledge runs HNSW+BM25');
+  console.log('coherent path: getSession checks Redis; getProfile checks SQLite revision before L1; appendTurn uses CAS; searchKnowledge refreshes tenant revisions');
   const header = `${pad('op', 18)}${pad('ops/sec', 14)}${pad('p50_ms', 12)}${pad('p99_ms', 12)}samples`;
   console.log(header);
   for (const row of [getSession, appendTurn, getProfile, searchKnowledge]) {
