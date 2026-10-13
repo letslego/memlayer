@@ -1,7 +1,7 @@
 import { ValidationError } from '../errors.js';
 import type { EmbeddingProvider } from '../embed/provider.js';
 import { resolveVector, resolveVectors } from '../embed/provider.js';
-import type { DurableStore, StoredChunk } from '../store/sqlite.js';
+import type { DurableStore, StoredChunk, NewDocument } from '../store/sqlite.js';
 import { chunkText, estimateTokens } from '../text.js';
 import type { Acl, IngestDocumentInput, IngestResult, KnowledgeHit, RetrievalMode } from '../types.js';
 import { aclAllows, assertMetadata, createId, normalizeAcl } from '../validate.js';
@@ -51,6 +51,13 @@ export class KnowledgeEngine {
   }
 
   async ingest(tenantId: string, input: IngestDocumentInput): Promise<IngestResult> {
+    const doc = await this.prepareDocument(tenantId, input);
+    this.store.insertDocument(doc);
+    return { documentId: doc.id, chunkCount: doc.chunks.length,
+      tokenEstimate: doc.chunks.reduce((sum, chunk) => sum + chunk.tokenEstimate, 0) };
+  }
+
+  async prepareDocument(tenantId: string, input: IngestDocumentInput, id = createId('doc')): Promise<NewDocument> {
     const title = input.title?.trim() ?? '';
     const text = input.text?.trim() ?? '';
     if (!title || title.length > 300) throw new ValidationError('title must be 1-300 characters');
@@ -71,7 +78,7 @@ export class KnowledgeEngine {
         throw new ValidationError(`Expected embedding dimension ${this.embedder.dimensions}`);
       }
     }
-    const documentId = createId('doc');
+    const documentId = id;
     const createdAt = Date.now();
     const chunks = parts.map((part, ordinal) => ({
       id: createId('chk'),
@@ -80,7 +87,7 @@ export class KnowledgeEngine {
       tokenEstimate: estimateTokens(part),
       vector: vectors[ordinal]!,
     }));
-    this.store.insertDocument({
+    return {
       id: documentId,
       tenantId,
       title,
@@ -89,11 +96,6 @@ export class KnowledgeEngine {
       metadata,
       createdAt,
       chunks,
-    });
-    return {
-      documentId,
-      chunkCount: chunks.length,
-      tokenEstimate: chunks.reduce((sum, chunk) => sum + chunk.tokenEstimate, 0),
     };
   }
 

@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { EXCHANGE_SCHEMA, ExchangeJournal } from './exchanges.js';
 import { dirname } from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import type { Acl, AuditEvent, CapBucket, ControlScope, Episode, KillSwitchState, ProfileFact } from '../types.js';
@@ -150,6 +151,7 @@ CREATE TABLE IF NOT EXISTS kill_switches (
 `;
 
 export class DurableStore {
+  readonly exchanges: ExchangeJournal;
   private readonly db: DatabaseSync;
   private readonly statements=new Map<string,StatementSync>();
   private prepare(sql:string):StatementSync { let statement=this.statements.get(sql);if(!statement){statement=this.db.prepare(sql);this.statements.set(sql,statement);}return statement; }
@@ -166,6 +168,8 @@ export class DurableStore {
       this.db.exec('PRAGMA synchronous = NORMAL;');
     }
     this.db.exec(SCHEMA);
+    this.db.exec(EXCHANGE_SCHEMA);
+    this.exchanges = new ExchangeJournal(this.db);
   }
 
   ping(): number {
@@ -248,7 +252,7 @@ export class DurableStore {
       .run(tenantId, userId, key);
   }
 
-  insertDocument(doc: NewDocument): void {
+  insertDocument(doc: NewDocument, transactional = true): void {
     const insertDoc = this.prepare(
       `INSERT INTO documents(id, tenant_id, title, source, acl_json, metadata_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -257,7 +261,7 @@ export class DurableStore {
       `INSERT INTO chunks(id, tenant_id, document_id, ordinal, text, token_estimate, vector, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    this.transaction(() => {
+    const write = () => {
       insertDoc.run(
         doc.id,
         doc.tenantId,
@@ -279,7 +283,9 @@ export class DurableStore {
           doc.createdAt,
         );
       }
-    });
+    };
+    if (transactional) this.transaction(write);
+    else write();
   }
 
   knowledgeRevision(tenantId:string):number {const row=this.prepare('SELECT revision FROM knowledge_revisions WHERE tenant_id=?').get(tenantId) as Row|undefined;return row?Number(row.revision):0;}

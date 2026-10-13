@@ -31,7 +31,39 @@ pnpm bench:locomo --mode bm25 --out reports/consistency-bm25.json
 pnpm bench:locomo --mode hybrid --out reports/consistency-hybrid.json
 ```
 
-The consistency regression suite exercises shared Redis and two open services sharing SQLite. Real Redis integration, live Gemini quality, and production-scale contention are not covered by these offline tests. The next stage remains a durable raw-exchange/outbox transaction with idempotent asynchronous indexing, followed by topic/time/entity retrieval and calibrated semantic reranking. This change does not implement ConDB/ChatIndex tree traversal or prompt caching, and does not alter episodic, procedural, or operational memory behavior.
+The consistency regression suite exercises shared Redis and two open services sharing SQLite. Real Redis integration, live Gemini quality, and production-scale contention are not covered by these offline tests. Durable exchanges, asynchronous indexing and structured conversation retrieval are described below. ConDB/ChatIndex tree traversal, automatic topic/entity extraction, calibrated semantic reranking, prompt caching and procedural/operational-memory enhancements remain follow-up work.
+
+## Durable conversations and asynchronous indexing
+
+Atlas now acknowledges persistence after **one SQLite transaction**, without waiting for embeddings. The transaction stores the exact user and assistant messages separately, a lexical FTS5 entry, an episode containing the exchange ID, and a pending indexing job. New ADK recent history is read from that journal, so it survives restart without Redis. The generic `appendTurn` API remains transient and unchanged.
+
+```ts
+const exchange = await memory.commitExchange('acme', {
+  userId: 'alice', sessionId: 'project', requestId: 'request-123',
+  question: 'We chose PostgreSQL.', answer: 'Decision recorded.',
+  topic: 'database', entities: ['PostgreSQL'],
+});
+// Immediate raw evidence, even before embeddings exist:
+const evidence = await memory.searchExchanges('acme', {
+  userId: 'alice', query: 'PostgreSQL', topic: 'database',
+  entity: 'PostgreSQL', since: 0, limit: 5,
+});
+const stop = memory.startIndexingWorker();
+console.log(memory.indexingStatus()); // pending / running / done counts
+// Or run a bounded batch in a host-managed job:
+await memory.drainIndexing({ limit: 10 });
+stop();
+```
+
+`pnpm adk:dev` starts the worker automatically. Other SDK hosts must start it or call `drainIndexing`; the HTTP server does not expose the journal/worker APIs. These APIs trust the host's authenticated tenant/user identity. Never accept those identities from model arguments or unverified request bodies. Worker/status APIs are host-admin operations across the database, not user-facing tools.
+
+Retry `commitExchange` with the same tenant/user/session/request ID **and identical payload** to receive the existing exchange. Conflicting payloads fail. The adapter accepts a fourth `requestId` argument on `saveExchange`, and `runAdkAnswer` accepts `requestId`. This deduplicates persistence, not model generation; the host must retain the original answer to retry storage without changing the payload.
+
+Jobs use leases, bounded per-call batches and exponential retry delays (1 second up to 5 minutes). A transaction fences the lease owner and atomically commits the document, chunks and completed job. Crashes leave jobs reclaimable after lease expiry. Embedding calls can occur more than once; indexed documents commit once. A closed service discards late embedding results. Stopping a worker prevents new claims but does not cancel its current provider call. Providers should enforce their own network deadlines; a hung call requires another worker or a restart to reclaim its expired lease. There is no dead-letter queue or retention/deletion API yet; monitor pending/running counts and provision storage appropriately.
+
+ADK recall first searches the current user's raw journal with optional exact session/topic/entity/time filters. Lexical matches return without an embedding query. If no raw matches exist and no structured filters were requested, recall falls back to existing knowledge retrieval (including legacy indexed chats). This is lexical-first routing, not calibrated score fusion. Topic and entity labels are host-supplied ASCII slugs (1-64 characters); there is no model-driven extraction or hierarchy yet. User and assistant text remain distinguishable evidence, not verified facts or executable instructions.
+
+Existing profiles, episodes and indexed chats remain readable. Old chats are not automatically backfilled into the new journal; structured filters and durable recent-turn views apply to new journal entries. Back up SQLite before upgrading. Schema creation is additive and requires SQLite FTS5. SQLite uses WAL with `synchronous=NORMAL`: transaction consistency and process-restart recovery are tested; power-loss durability is not guaranteed by that setting.
 
 ## Quick start
 
@@ -95,7 +127,7 @@ Atlas uses Memlayer directly in-process. It does not require the HTTP server, Do
 
 Try “Keep your answers concise and focus on working implementations.” Atlas may propose a lesson grounded in an exact quote from that message. Run `/reflections`, inspect the proposed text, and pass the returned `ep_...` ID to `/accept` or `/reject`. The model cannot approve its own proposals. Extraction is model-driven; every message does not necessarily produce a proposal.
 
-Profile facts, indexed exchanges, episodes, and review decisions survive restart in `MEMLAYER_DB`. Keep the same database, tenant, and user to retain continuity. The CLI's recent working-turn cache is in-memory and resets on restart; durable historical retrieval still works. The HTTP service uses its own `DATABASE_PATH` and Redis configuration, separate from the Atlas CLI defaults.
+Profile facts, raw exchanges, indexing jobs, episodes, and review decisions survive restart in `MEMLAYER_DB`. Keep the same database, tenant, and user to retain continuity. Atlas's recent-turn history now comes from the durable journal. The generic working-memory API remains transient. The HTTP service uses its own `DATABASE_PATH` and Redis configuration, separate from the Atlas CLI defaults.
 
 ### Customize the persona
 
@@ -240,8 +272,8 @@ flowchart TB
   ASM --> KM[Knowledge]
   ASM --> EM[Episodes]
   SVC --> OM[Operational memory]
-  WM --> L1[L1 LRU]
-  PM --> L1
+  WM --> Redis[Redis or embedded store]
+  PM --> L1[L1 revision-keyed LRU]
   L1 -->|miss, single-flight| Redis[Redis or embedded store]
   Redis -->|profile miss| SQL[(SQLite)]
   PM --> SQL
@@ -257,8 +289,8 @@ flowchart TB
 
 | Layer | What it holds | Hot path | Durable store | In the model prompt |
 | --- | --- | --- | --- | --- |
-| Working | Recent turns and tool results for a session | L1, then Redis (`ml:wm:{tenant}:{session}`, MessagePack, TTL) | Redis only. Sessions are ephemeral. | Yes, newest turns that fit |
-| Profile | Small typed facts per user | L1, then Redis (`ml:pf:{tenant}:{user}`) | SQLite `profile_facts`. Writes delete the Redis key first, then commit SQLite, then fill Redis. | Yes, within ~15% of the budget |
+| Working | Recent turns and tool results for a session | Redis (`ml:wm:{tenant}:{session}`, MessagePack, TTL), atomic appends | Redis only. Generic sessions are ephemeral; ADK chat uses the separate journal. | Yes, newest turns that fit |
+| Profile | Small typed facts per user | SQLite revision check, then revision-keyed L1/Redis | SQLite `profile_facts`; transactionally maintained cache revisions | Yes, within ~15% of the budget |
 | Knowledge | Document chunks | In-process HNSW + BM25 for that tenant only | SQLite `documents` + `chunks` (float32 blobs) | Top-k when a query is passed |
 | Episodic | Decisions, resolved tickets, other events | SQLite by tenant, user, time | SQLite `episodes` | A few recent episodes |
 | Operational | Append-only tool audit, step/spend caps, kill switch | Point reads on the caps primary key | SQLite `audit_log`, `control_caps`, `kill_switches` | Only when asked |
@@ -284,14 +316,16 @@ These are design targets for a warm local process, not a hosted SLA.
 
 | Call | Target |
 | --- | --- |
-| `getWorkingMemory` L1 hit | p99 under 1 ms |
+| `getWorkingMemory` shared-store read | Measure for your Redis deployment; no L1-only path |
 | `appendTurn` | p99 under 2 ms |
 | `getProfile` L1 hit | p99 under 1 ms |
 | `searchKnowledge` on about 60 local chunks | p99 under 5 ms |
 
 `pnpm bench` prints ops/sec, p50, and p99 for `getSession` (the working-memory read), `appendTurn`, `getProfile`, and `searchKnowledge`.
 
-One local run on Node v22.14.0 with the embedded Redis store, SQLite, the hashing embedder, and 60 chunks. `getSession` and `getProfile` are L1 hits after warmup. This is a measurement from this workspace, not a hosted SLA.
+Current coherent-path local run (Node v24.19.0, embedded Redis, 60 chunks): p99 `getSession` 0.2381 ms, `appendTurn` 0.7450 ms, `getProfile` 0.0353 ms, and `searchKnowledge` 1.564 ms. These measurements exclude remote Redis, Gemini and outbox indexing; they are not directly comparable to the older run below.
+
+Historical pre-consistency-change run on Node v22.14.0 with the embedded Redis store, SQLite, the hashing embedder, and 60 chunks. These figures used L1-only reads and do not describe the current coherent read path. Rerun `pnpm bench` for current results; they are not a hosted SLA.
 
 | op | ops/sec | p50 | p99 | samples |
 | --- | ---: | ---: | ---: | ---: |
@@ -348,7 +382,7 @@ Compose already sets `REDIS_URL=redis://127.0.0.1:6379` for the Memlayer contain
 
 The embedded store implements the same client surface as the pool: `GET`/`SET`/`DEL`, `MGET`, and `PIPELINE`. The ioredis adapter keeps a small connection pool (`REDIS_POOL_SIZE`, default 4) with auto-pipelining, and explicit pipelines still run on one connection. Concurrent misses for different keys in the same turn are coalesced into one pipeline. Concurrent misses for the **same** key share one in-flight load (single-flight) so SQLite is hit once.
 
-L1 TTL defaults to 500 ms and refreshes on read. That is long enough for a chat turn and short enough that another process writing Redis is not stuck behind a stale process cache. Writes update L1 in this process immediately.
+L1 TTL defaults to 500 ms and refreshes on read. Working reads bypass L1 for shared-store freshness. Profiles check the durable revision before using a cached version; stale versions expire normally.
 
 ## HTTP API
 

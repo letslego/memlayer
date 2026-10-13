@@ -30,7 +30,7 @@ describe('ADK memory adapter',()=>{
       await adapter.saveExchange('old','I live in Princeton.','Thanks.');
       const answer = await runAdkAnswer({question:'Where do I live?',adapter,model:new RecallModel(),persistSession:'new'});
       expect(answer).toBe('Princeton');
-      expect((await memory.getWorkingMemory('one',adapter.sessionKey('new'))).turns).toHaveLength(2);
+      expect(await memory.searchExchanges('one', {userId:'a',sessionId:adapter.sessionKey('new')})).toHaveLength(1);
       const before = (await memory.listEpisodes('one',{userId:'a'})).length;
       expect(await runAdkAnswer({question:'Where do I live?',adapter,model:new RecallModel()})).toBe('Princeton');
       expect((await memory.listEpisodes('one',{userId:'a'})).length).toBe(before);

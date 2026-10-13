@@ -32,6 +32,9 @@ import type {
   Episode,
   EpisodeFilter,
   EpisodeInput,
+  Exchange,
+  ExchangeInput,
+  ExchangeQuery,
   FactInput,
   IngestDocumentInput,
   IngestResult,
@@ -85,6 +88,7 @@ export class MemoryService {
   private readonly knowledge: KnowledgeEngine;
   private readonly embedder: EmbeddingProvider;
   private closed = false;
+  private readonly workerStops = new Set<() => void>();
 
   private constructor(
     config: ResolvedConfig,
@@ -250,6 +254,95 @@ export class MemoryService {
       if(!this.store.loadFacts(tenant,user).some(f=>f.key===factKey))throw new NotFoundError('fact',factKey);
       this.store.deleteFact(tenant,user,factKey);
     }));
+  }
+
+  /** Commits raw evidence, lexical index, episode reference and pending job together. */
+  async commitExchange(tenantId: string, input: ExchangeInput): Promise<Exchange> {
+    this.assertOpen();
+    const tenant = requireId(tenantId, 'tenantId');
+    const normalized: ExchangeInput = { ...input,
+      userId: requireId(input.userId, 'userId'), sessionId: requireId(input.sessionId, 'sessionId'),
+      requestId: requireId(input.requestId, 'requestId') };
+    for (const key of ['question', 'answer'] as const) {
+      if (typeof input[key] !== 'string' || !input[key].trim() || input[key].length > 32000)
+        throw new ValidationError(`${key} must be 1-32000 characters`);
+    }
+    if (input.topic !== undefined) normalized.topic = requireLabel(input.topic, 'topic');
+    if (input.entities !== undefined) {
+      if (!Array.isArray(input.entities) || input.entities.length > 32) throw new ValidationError('entities must contain at most 32 labels');
+      normalized.entities = input.entities.map(entity => requireLabel(entity, 'entity'));
+    }
+    if (input.createdAt !== undefined && (!Number.isSafeInteger(input.createdAt) || input.createdAt < 0))
+      throw new ValidationError('createdAt must be a nonnegative safe integer');
+    return this.store.transaction(() => this.store.exchanges.commit(tenant, normalized));
+  }
+
+  async searchExchanges(tenantId: string, query: ExchangeQuery): Promise<Exchange[]> {
+    this.assertOpen();
+    const tenant = requireId(tenantId, 'tenantId');
+    const normalized = { ...query, userId: requireId(query.userId, 'userId') };
+    if (query.sessionId !== undefined) normalized.sessionId = requireId(query.sessionId, 'sessionId');
+    if (query.topic !== undefined) normalized.topic = requireLabel(query.topic, 'topic');
+    if (query.entity !== undefined) normalized.entity = requireLabel(query.entity, 'entity');
+    if (query.query !== undefined && (typeof query.query !== 'string' || query.query.length > 8000)) throw new ValidationError('query must be at most 8000 characters');
+    for (const key of ['since', 'until'] as const) if (query[key] !== undefined && (!Number.isSafeInteger(query[key]) || query[key]! < 0)) throw new ValidationError(`${key} must be a nonnegative safe integer`);
+    if (query.since !== undefined && query.until !== undefined && query.since > query.until) throw new ValidationError('since must not exceed until');
+    if (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 50)) throw new ValidationError('limit must be 1-50');
+    return this.store.exchanges.search(tenant, normalized);
+  }
+
+  indexingStatus(): Record<string, number> { this.assertOpen(); return this.store.exchanges.status(); }
+
+  /** Explicit host-side worker API. A lost lease fences off late model responses. */
+  async drainIndexing(options: { limit?: number; leaseMs?: number } = {}): Promise<{ indexed: number; failed: number; stale: number }> {
+    this.assertOpen();
+    const limit = options.limit ?? 10;
+    const leaseMs = options.leaseMs ?? 120000;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new ValidationError('limit must be 1-100');
+    if (!Number.isInteger(leaseMs) || leaseMs < 1 || leaseMs > 600000) throw new ValidationError('leaseMs must be 1-600000');
+    const result = { indexed: 0, failed: 0, stale: 0 };
+    for (let i = 0; i < limit && !this.closed; i++) {
+      const job = this.store.transaction(() => this.store.exchanges.claim(Date.now(), leaseMs));
+      if (!job) break;
+      try {
+        const e = job.exchange;
+        const doc = await this.knowledge.prepareDocument(e.tenantId, {
+          title: e.topic ?? 'Conversation exchange', text: `User: ${e.question}\nAssistant: ${e.answer}`,
+          source: `chat:${e.id}`, acl: { visibility: 'restricted', userIds: [e.userId] },
+          metadata: { exchangeId: e.id, sessionId: e.sessionId, occurredAt: e.createdAt },
+        }, `doc_${e.id}`);
+        if (this.closed) { result.stale++; break; }
+        const committed = this.store.transaction(() => {
+          if (!this.store.exchanges.owns(job, Date.now())) return false;
+          this.store.insertDocument(doc, false);
+          this.store.exchanges.complete(job, doc.id);
+          return true;
+        });
+        if (committed) result.indexed++; else result.stale++;
+      } catch {
+        if (!this.closed) this.store.exchanges.retry(job);
+        result.failed++;
+      }
+    }
+    return result;
+  }
+
+  /** One job at a time. Stop prevents new claims; close also fences in-flight writes. */
+  startIndexingWorker(options: { pollMs?: number; onError?: (error: unknown) => void } = {}): () => void {
+    this.assertOpen();
+    const pollMs = options.pollMs ?? 1000;
+    if (!Number.isInteger(pollMs) || pollMs < 10) throw new ValidationError('pollMs must be at least 10');
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const stop = () => { stopped = true; clearTimeout(timer); this.workerStops.delete(stop); };
+    const tick = async () => {
+      if (stopped || this.closed) return;
+      try { await this.drainIndexing({ limit: 1 }); } catch (error) { options.onError?.(error); }
+      if (!stopped && !this.closed) { timer = setTimeout(() => { void tick(); }, pollMs); timer.unref(); }
+    };
+    this.workerStops.add(stop);
+    timer = setTimeout(() => { void tick(); }, 0); timer.unref();
+    return stop;
   }
 
   ingestDocument(tenantId: string, input: IngestDocumentInput, opts?: CallOptions): Promise<IngestResult> {
@@ -494,6 +587,7 @@ export class MemoryService {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    for (const stop of this.workerStops) stop();
     this.l1.clear();
     this.store.close();
     if (this.ownsRedis) await this.redis.close();
