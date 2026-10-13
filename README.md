@@ -31,7 +31,7 @@ pnpm bench:locomo --mode bm25 --out reports/consistency-bm25.json
 pnpm bench:locomo --mode hybrid --out reports/consistency-hybrid.json
 ```
 
-The consistency regression suite exercises shared Redis and two open services sharing SQLite. Real Redis integration, live Gemini quality, and production-scale contention are not covered by these offline tests. Durable exchanges, asynchronous indexing and structured conversation retrieval are described below. ConDB/ChatIndex tree traversal, automatic topic/entity extraction, calibrated semantic reranking, prompt caching and procedural/operational-memory enhancements remain follow-up work.
+The consistency regression suite exercises shared Redis and two open services sharing SQLite. Real Redis integration, live Gemini quality, and production-scale contention are not covered by these offline tests. Durable exchanges, asynchronous indexing and structured conversation retrieval are described below. Automatic grounded annotations and a bounded hierarchy are available; ConDB-style reasoning traversal, calibrated semantic reranking, prompt caching and procedural/operational-memory enhancements remain follow-up work.
 
 ## Durable conversations and asynchronous indexing
 
@@ -61,7 +61,42 @@ Retry `commitExchange` with the same tenant/user/session/request ID **and identi
 
 Jobs use leases, bounded per-call batches and exponential retry delays (1 second up to 5 minutes). A transaction fences the lease owner and atomically commits the document, chunks and completed job. Crashes leave jobs reclaimable after lease expiry. Embedding calls can occur more than once; indexed documents commit once. A closed service discards late embedding results. Stopping a worker prevents new claims but does not cancel its current provider call. Providers should enforce their own network deadlines; a hung call requires another worker or a restart to reclaim its expired lease. There is no dead-letter queue or retention/deletion API yet; monitor pending/running counts and provision storage appropriately.
 
-ADK recall first searches the current user's raw journal with optional exact session/topic/entity/time filters. Lexical matches return without an embedding query. If no raw matches exist and no structured filters were requested, recall falls back to existing knowledge retrieval (including legacy indexed chats). This is lexical-first routing, not calibrated score fusion. Topic and entity labels are host-supplied ASCII slugs (1-64 characters); there is no model-driven extraction or hierarchy yet. User and assistant text remain distinguishable evidence, not verified facts or executable instructions.
+ADK recall first searches the current user's raw journal and grounded annotation labels with optional exact session/topic/entity/time filters. Raw lexical hits precede annotation-routed hits, and both return without an embedding query. If no journal matches exist and no structured filters were requested, recall falls back to existing knowledge retrieval (including legacy indexed chats). This is lexical-first routing, not calibrated score fusion. Host-supplied topic/entity labels remain ASCII slugs; automatically extracted entities can contain Unicode. User and assistant text remain distinguishable evidence, not verified facts or executable instructions.
+
+### Automatic annotations and hierarchical recall
+
+The indexing worker now extracts bounded topic/entity annotations. By default `LocalConversationEnricher` runs offline: a small explicit taxonomy plus heuristic proper-name extraction, including a few Indic name patterns. Every annotation carries an exact quote and its user/assistant source role. Entity labels must appear verbatim in their evidence quotes. These checks prove attribution, not that a statement is true or a topic interpretation is correct. They do not update profile facts, lessons, persona or entitlements.
+
+```ts
+const tree = await memory.conversationHierarchy('acme', 'alice', { limit: 100 });
+// sessions -> topics -> raw exchange IDs + attributed evidence quotes
+const raw = await memory.readExchange('acme', 'alice', exchange.id);
+// Upgrade/backfill journal entries without re-embedding their documents:
+await memory.annotateConversationHistory('acme', 'alice', 100);
+```
+
+Hierarchy reads cover at most 200 recent exchanges and explicitly report `truncated`; an exchange may belong to multiple topics. Unannotated entries appear under their host topic or `unclassified`. ADK exposes read-only `browse_memory` and `read_exchange` tools under the existing `recall_memory` entitlement, rechecked on execution. Tree session IDs are opaque storage keys; use leaf IDs to read evidence rather than passing these keys as human session names. Tool responses are bounded by context entitlements and explicitly marked when truncated. This is an evidence-linked two-level index, not ConDB's LLM beam search or a tested multi-hop reasoning improvement.
+
+For optional model-driven extraction in Atlas, set:
+
+```dotenv
+MEMLAYER_ENRICHMENT=gemini
+ADK_MODEL=gemini-2.5-flash
+```
+
+This makes an additional Google model call per indexed exchange, sending only its raw user/assistant messages. Configure credentials and trusted entitlements permitting `persist_chat` and that model first. Gemini extraction enforces a 15-second deadline, checks authorization before/after the call, requests structured JSON, and validates attributed quotes. Invalid, denied or failed enrichment falls back to the offline extractor and records a `:fallback` extractor ID in tree provenance. Embedding failures still follow the indexing outbox's retry policy. Leave `MEMLAYER_ENRICHMENT=local` to avoid extra model calls. Core SDK users can inject `conversationEnricher`; the Google implementation is an opt-in import from `src/adk/enrichment.ts`.
+
+Annotation tables and FTS routing indexes are added on database open. Existing completed jobs are not automatically rerun; use the bounded backfill helper repeatedly for the authenticated user until it returns zero. It covers journal entries only, not legacy chats stored solely as knowledge documents. Annotation provenance is committed with indexed documents and job completion. Backfill can make annotations searchable independently of embeddings.
+
+Validate the routing and safety contracts:
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm bench:conversation
+```
+
+The conversation benchmark contains six hand-authored routing checks and a cross-user leakage check; CI runs it alongside LoCoMo. It is deliberately synthetic and is not a claim about live-model answer accuracy, broad entity coverage, or production latency. Live Gemini enrichment and answer-quality validation require configured Google/Vertex credentials.
 
 Existing profiles, episodes and indexed chats remain readable. Old chats are not automatically backfilled into the new journal; structured filters and durable recent-turn views apply to new journal entries. Back up SQLite before upgrading. Schema creation is additive and requires SQLite FTS5. SQLite uses WAL with `synchronous=NORMAL`: transaction consistency and process-restart recovery are tested; power-loss durability is not guaranteed by that setting.
 

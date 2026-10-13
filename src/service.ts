@@ -11,6 +11,7 @@ import {
   ValidationError,
 } from './errors.js';
 import { KnowledgeEngine } from './knowledge/engine.js';
+import { LocalConversationEnricher, validateAnnotations, type ConversationEnricher } from './knowledge/conversation.js';
 import type { RedisClient } from './redis/client.js';
 import { createRedisClient } from './redis/create.js';
 import { HotCache } from './store/hot.js';
@@ -87,6 +88,7 @@ export class MemoryService {
   private readonly profiles: HotCache<ProfileBlob>;
   private readonly knowledge: KnowledgeEngine;
   private readonly embedder: EmbeddingProvider;
+  private readonly conversationEnricher: ConversationEnricher;
   private closed = false;
   private readonly workerStops = new Set<() => void>();
 
@@ -96,12 +98,14 @@ export class MemoryService {
     ownsRedis: boolean,
     store: DurableStore,
     embedder: EmbeddingProvider,
+    conversationEnricher: ConversationEnricher,
   ) {
     this.config = config;
     this.redis = redis;
     this.ownsRedis = ownsRedis;
     this.store = store;
     this.embedder = embedder;
+    this.conversationEnricher = conversationEnricher;
     this.l1 = new LRUCache<string, WorkingBlob | ProfileBlob>({
       max: config.l1Max,
       ttl: config.l1TtlMs,
@@ -144,7 +148,7 @@ export class MemoryService {
     const store = new DurableStore(config.databasePath);
     try {
       assertEmbeddingMeta(store, embedder);
-      return new MemoryService(config, redis, ownsRedis, store, embedder);
+      return new MemoryService(config, redis, ownsRedis, store, embedder, options.conversationEnricher ?? new LocalConversationEnricher());
     } catch (error) {
       store.close();
       if (ownsRedis) await redis.close();
@@ -283,7 +287,11 @@ export class MemoryService {
     const normalized = { ...query, userId: requireId(query.userId, 'userId') };
     if (query.sessionId !== undefined) normalized.sessionId = requireId(query.sessionId, 'sessionId');
     if (query.topic !== undefined) normalized.topic = requireLabel(query.topic, 'topic');
-    if (query.entity !== undefined) normalized.entity = requireLabel(query.entity, 'entity');
+    if (query.entity !== undefined) {
+      if (typeof query.entity !== 'string' || !query.entity.trim() || query.entity.length > 120 || /[\u0000-\u001f]/u.test(query.entity))
+        throw new ValidationError('entity must be 1-120 printable characters');
+      normalized.entity = query.entity.trim();
+    }
     if (query.query !== undefined && (typeof query.query !== 'string' || query.query.length > 8000)) throw new ValidationError('query must be at most 8000 characters');
     for (const key of ['since', 'until'] as const) if (query[key] !== undefined && (!Number.isSafeInteger(query[key]) || query[key]! < 0)) throw new ValidationError(`${key} must be a nonnegative safe integer`);
     if (query.since !== undefined && query.until !== undefined && query.since > query.until) throw new ValidationError('since must not exceed until');
@@ -292,6 +300,43 @@ export class MemoryService {
   }
 
   indexingStatus(): Record<string, number> { this.assertOpen(); return this.store.exchanges.status(); }
+
+  async conversationHierarchy(tenantId: string, userId: string, options: { limit?: number; sessionId?: string } = {}) {
+    this.assertOpen();
+    const limit = options.limit ?? 100;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new ValidationError('limit must be 1-200');
+    return this.store.exchanges.hierarchy(requireId(tenantId, 'tenantId'), requireId(userId, 'userId'), limit,
+      options.sessionId === undefined ? undefined : requireId(options.sessionId, 'sessionId'));
+  }
+
+  async readExchange(tenantId: string, userId: string, exchangeId: string): Promise<Exchange | null> {
+    this.assertOpen();
+    return this.store.exchanges.read(requireId(tenantId, 'tenantId'), requireId(userId, 'userId'), requireId(exchangeId, 'exchangeId'));
+  }
+
+  /** Explicit migration helper; existing indexed journal entries need no re-embedding. */
+  async annotateConversationHistory(tenantId: string, userId: string, limit = 100): Promise<number> {
+    this.assertOpen();
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new ValidationError('limit must be 1-200');
+    const rows = this.store.exchanges.unannotated(requireId(tenantId, 'tenantId'), requireId(userId, 'userId'), limit);
+    let count = 0;
+    for (const e of rows) {
+      const enriched = await this.enrichConversation(e);
+      if (this.closed) break;
+      this.store.transaction(() => this.store.exchanges.annotate(e, enriched.annotations, enriched.extractorId));
+      count++;
+    }
+    return count;
+  }
+
+  private async enrichConversation(exchange: Exchange) {
+    try {
+      return { annotations: validateAnnotations(exchange, await this.conversationEnricher.extract(exchange)), extractorId: this.conversationEnricher.id };
+    } catch {
+      const local = new LocalConversationEnricher();
+      return { annotations: local.extract(exchange), extractorId: `${local.id}:fallback` };
+    }
+  }
 
   /** Explicit host-side worker API. A lost lease fences off late model responses. */
   async drainIndexing(options: { limit?: number; leaseMs?: number } = {}): Promise<{ indexed: number; failed: number; stale: number }> {
@@ -306,6 +351,8 @@ export class MemoryService {
       if (!job) break;
       try {
         const e = job.exchange;
+        const enriched = await this.enrichConversation(e);
+        if (this.closed) { result.stale++; break; }
         const doc = await this.knowledge.prepareDocument(e.tenantId, {
           title: e.topic ?? 'Conversation exchange', text: `User: ${e.question}\nAssistant: ${e.answer}`,
           source: `chat:${e.id}`, acl: { visibility: 'restricted', userIds: [e.userId] },
@@ -315,6 +362,7 @@ export class MemoryService {
         const committed = this.store.transaction(() => {
           if (!this.store.exchanges.owns(job, Date.now())) return false;
           this.store.insertDocument(doc, false);
+          this.store.exchanges.annotate(e, enriched.annotations, enriched.extractorId);
           this.store.exchanges.complete(job, doc.id);
           return true;
         });

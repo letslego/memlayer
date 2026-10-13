@@ -36,6 +36,8 @@ export interface MemoryServiceOptions {
   /** Injected Redis client. When set, REDIS_URL is ignored and the caller owns close(). */
   redis?: import('./redis/client.js').RedisClient;
   embeddings?: import('./embed/provider.js').EmbeddingProvider;
+  /** Optional remote/custom enrichment; grounded offline extraction is the default. */
+  conversationEnricher?: import('./knowledge/conversation.js').ConversationEnricher;
 }
 
 export function resolveConfig(options: MemoryServiceOptions = {}): ResolvedConfig {

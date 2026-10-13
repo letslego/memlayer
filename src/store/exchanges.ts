@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Exchange, ExchangeInput, ExchangeQuery } from '../types.js';
 import { tokenize } from '../text.js';
+import type { ConversationAnnotations } from '../knowledge/conversation.js';
 
 export const EXCHANGE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS exchanges (
@@ -12,6 +13,11 @@ CREATE TABLE IF NOT EXISTS exchanges (
 );
 CREATE INDEX IF NOT EXISTS idx_exchange_owner_time ON exchanges(tenant_id,user_id,created_at);
 CREATE VIRTUAL TABLE IF NOT EXISTS exchange_fts USING fts5(exchange_id UNINDEXED, question, answer);
+CREATE TABLE IF NOT EXISTS exchange_annotations (
+ exchange_id TEXT PRIMARY KEY REFERENCES exchanges(id), extractor_id TEXT NOT NULL,
+ annotations_json TEXT NOT NULL, created_at INTEGER NOT NULL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS annotation_fts USING fts5(exchange_id UNINDEXED, labels);
 CREATE TABLE IF NOT EXISTS indexing_jobs (
  exchange_id TEXT PRIMARY KEY REFERENCES exchanges(id), state TEXT NOT NULL DEFAULT 'pending',
  attempts INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL DEFAULT 0,
@@ -54,18 +60,79 @@ export class ExchangeJournal {
     const clauses = ['e.tenant_id=?', 'e.user_id=?'];
     const params: Array<string | number> = [tenantId, query.userId];
     for (const [column, value] of [['session_id', query.sessionId], ['topic', query.topic]] as const) {
-      if (value !== undefined) { clauses.push(`e.${column}=?`); params.push(value); }
+      if (value !== undefined) {
+        if (column === 'topic') {
+          clauses.push(`(e.topic=? OR EXISTS(SELECT 1 FROM exchange_annotations a,json_each(a.annotations_json,'$.topics') t WHERE a.exchange_id=e.id AND json_extract(t.value,'$.key')=?))`);
+          params.push(value, value);
+        } else { clauses.push(`e.${column}=?`); params.push(value); }
+      }
     }
     if (query.since !== undefined) { clauses.push('e.created_at>=?'); params.push(query.since); }
     if (query.until !== undefined) { clauses.push('e.created_at<=?'); params.push(query.until); }
     if (query.entity !== undefined) {
-      clauses.push('EXISTS(SELECT 1 FROM json_each(e.entities_json) WHERE value=?)'); params.push(query.entity);
+      clauses.push(`(EXISTS(SELECT 1 FROM json_each(e.entities_json) WHERE value=?) OR EXISTS(
+        SELECT 1 FROM exchange_annotations a,json_each(a.annotations_json,'$.entities') n
+        WHERE a.exchange_id=e.id AND json_extract(n.value,'$.label')=?))`); params.push(query.entity, query.entity);
     }
+    const baseClauses = [...clauses];
+    const baseParams = [...params];
     if (terms.length) { clauses.push('exchange_fts MATCH ?'); params.push(terms.map(t => `"${t}"`).join(' OR ')); }
     const join = terms.length ? 'JOIN exchange_fts ON exchange_fts.exchange_id=e.id' : '';
     const order = terms.length ? 'bm25(exchange_fts), e.created_at DESC, e.rowid DESC' : 'e.created_at DESC, e.rowid DESC';
-    return this.db.prepare(`SELECT e.* FROM exchanges e ${join} WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT ?`)
+    const raw = this.db.prepare(`SELECT e.* FROM exchanges e ${join} WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT ?`)
       .all(...params, query.limit ?? 10).map(row => this.map(row));
+    if (!terms.length || raw.length >= (query.limit ?? 10)) return raw;
+    const routed = this.db.prepare(`SELECT e.* FROM exchanges e JOIN annotation_fts ON annotation_fts.exchange_id=e.id
+      WHERE ${baseClauses.join(' AND ')} AND annotation_fts MATCH ? ORDER BY bm25(annotation_fts),e.created_at DESC,e.rowid DESC LIMIT ?`)
+      .all(...baseParams, terms.map(t => `"${t}"`).join(' OR '), query.limit ?? 10).map(row => this.map(row));
+    const seen = new Set(raw.map(e => e.id));
+    return [...raw, ...routed.filter(e => !seen.has(e.id))].slice(0, query.limit ?? 10);
+  }
+
+  annotate(exchange: Exchange, annotations: ConversationAnnotations, extractorId: string): void {
+    this.db.prepare(`INSERT INTO exchange_annotations VALUES(?,?,?,?) ON CONFLICT(exchange_id)
+      DO UPDATE SET extractor_id=excluded.extractor_id,annotations_json=excluded.annotations_json,created_at=excluded.created_at`)
+      .run(exchange.id, extractorId, JSON.stringify(annotations), Date.now());
+    this.db.prepare('DELETE FROM annotation_fts WHERE exchange_id=?').run(exchange.id);
+    this.db.prepare('INSERT INTO annotation_fts(exchange_id,labels) VALUES(?,?)').run(exchange.id,
+      [...annotations.topics.flatMap(t => [t.key, t.label]), ...annotations.entities.map(e => e.label)].join(' '));
+  }
+
+  read(tenantId: string, userId: string, exchangeId: string): Exchange | null {
+    const row = this.db.prepare('SELECT * FROM exchanges WHERE tenant_id=? AND user_id=? AND id=?').get(tenantId, userId, exchangeId);
+    return row ? this.map(row) : null;
+  }
+
+  unannotated(tenantId: string, userId: string, limit: number): Exchange[] {
+    return this.db.prepare(`SELECT e.* FROM exchanges e LEFT JOIN exchange_annotations a ON a.exchange_id=e.id
+      WHERE e.tenant_id=? AND e.user_id=? AND a.exchange_id IS NULL ORDER BY e.rowid LIMIT ?`)
+      .all(tenantId, userId, limit).map(row => this.map(row));
+  }
+
+  hierarchy(tenantId: string, userId: string, limit: number, sessionId?: string) {
+    const condition = sessionId === undefined ? '' : ' AND e.session_id=?';
+    const params = sessionId === undefined ? [tenantId, userId] : [tenantId, userId, sessionId];
+    const rows = this.db.prepare(`SELECT e.*,a.annotations_json,a.extractor_id FROM exchanges e
+      LEFT JOIN exchange_annotations a ON a.exchange_id=e.id WHERE e.tenant_id=? AND e.user_id=?${condition}
+      ORDER BY e.created_at DESC,e.rowid DESC LIMIT ?`).all(...params, limit + 1);
+    const sessions = new Map<string, Map<string, { key: string; label: string; leaves: Array<{
+      exchangeId: string; occurredAt: number; extractorId: string | null; support: Array<{ role: 'user' | 'assistant'; quote: string }>;
+    }> }>>();
+    for (const row of rows.slice(0, limit)) {
+      const e = this.map(row);
+      const annotations = row.annotations_json ? JSON.parse(String(row.annotations_json)) as ConversationAnnotations : { topics: [], entities: [] };
+      const topics = annotations.topics.length ? annotations.topics : [{ key: e.topic ?? 'unclassified', label: e.topic ?? 'Unclassified', role: 'user' as const, quote: e.question.slice(0, 300) }];
+      let session = sessions.get(e.sessionId);
+      if (!session) { session = new Map(); sessions.set(e.sessionId, session); }
+      for (const topic of topics) {
+        let node = session.get(topic.key);
+        if (!node) { node = { key: topic.key, label: topic.label, leaves: [] }; session.set(topic.key, node); }
+        node.leaves.push({ exchangeId: e.id, occurredAt: e.createdAt,
+          extractorId: row.extractor_id ? String(row.extractor_id) : null, support: [{ role: topic.role, quote: topic.quote }] });
+      }
+    }
+    return { tenantId, userId, truncated: rows.length > limit,
+      sessions: [...sessions].map(([id, topics]) => ({ sessionId: id, topics: [...topics.values()] })) };
   }
 
   claim(now: number, leaseMs: number): IndexingJob | null {

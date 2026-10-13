@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { GeminiEmbeddingProvider } from '../src/embed/gemini.js';
+import { GeminiConversationEnricher } from '../src/adk/enrichment.js';
 import { openMemoryService } from '../src/service.js';
 import { fileAuthorizationProvider } from '../src/adk/authorization.js';
 import { loadPersona } from '../src/adk/persona.js';
@@ -10,12 +11,15 @@ import { MemlayerAdapter, runAdkAnswer } from '../src/adk/adapter.js';
 async function main() {
   if (!process.env.GOOGLE_API_KEY && process.env.GOOGLE_GENAI_USE_VERTEXAI !== 'true') throw new Error('Set GOOGLE_API_KEY or configure Vertex AI before running adk:dev');
   const persona = await loadPersona(process.env.ADK_PERSONA_PATH || undefined);
-  const memory = await openMemoryService({ databasePath: process.env.MEMLAYER_DB ?? 'data/adk.sqlite',
-    embeddings: process.env.MEMLAYER_EMBEDDINGS === 'gemini' ? new GeminiEmbeddingProvider() : undefined });
   const identity = {
     tenantId: process.env.MEMLAYER_TENANT ?? 'local', userId: process.env.MEMLAYER_USER ?? 'user',
   };
   const authorization=fileAuthorizationProvider(process.env.ADK_ENTITLEMENTS_PATH||new URL('../config/entitlements.local.json',import.meta.url),identity);
+  const enrichment = process.env.MEMLAYER_ENRICHMENT ?? 'local';
+  if (!['local', 'gemini'].includes(enrichment)) throw new Error('MEMLAYER_ENRICHMENT must be local or gemini');
+  const memory = await openMemoryService({ databasePath: process.env.MEMLAYER_DB ?? 'data/adk.sqlite',
+    embeddings: process.env.MEMLAYER_EMBEDDINGS === 'gemini' ? new GeminiEmbeddingProvider() : undefined,
+    conversationEnricher: enrichment === 'gemini' ? new GeminiConversationEnricher(process.env.ADK_MODEL ?? 'gemini-2.5-flash', authorization) : undefined });
   const adapter=new MemlayerAdapter(memory,identity,'hybrid',authorization);
   const stopIndexing = memory.startIndexingWorker({ onError: () => console.error('Indexing worker failed; raw history remains available.') });
   let session = process.env.MEMLAYER_SESSION ?? 'session-1';

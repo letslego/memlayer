@@ -1,5 +1,7 @@
 export { buildContextPack } from './assemble.js';
 export { HashEmbeddingProvider } from './embed/hash.js';
+export { LocalConversationEnricher, validateAnnotations } from './knowledge/conversation.js';
+export type { ConversationEnricher, ConversationAnnotations } from './knowledge/conversation.js';
 export type { EmbeddingProvider } from './embed/provider.js';
 export {
   CapExceededError,
