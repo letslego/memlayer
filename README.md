@@ -1,10 +1,37 @@
 # Memlayer
 
-Multi-tenant memory for an enterprise chatbot. Five layers, one TypeScript service, a hot path that stays in process when the session is warm.
+Multi-tenant memory for an enterprise chatbot. Five layers, one TypeScript service, with coherent shared working memory and versioned profile caches.
 
-Working memory and profile facts are read from a small in-process LRU, then a Redis-compatible store (embedded by default, ioredis when `REDIS_URL` is set). Profile facts, episodes, the audit log, and knowledge metadata live in SQLite. Knowledge search uses a **separate HNSW + BM25 index per tenant**, so another tenant's vectors are never scored.
+Working memory checks a Redis-compatible store on every read (embedded by default, ioredis when `REDIS_URL` is set). Profile facts use a small in-process LRU keyed by their SQLite revision. Profile facts, episodes, the audit log, and knowledge metadata live in SQLite. Knowledge search uses a **separate HNSW + BM25 index per tenant**, so another tenant's vectors are never scored.
 
 The memory service, tests, and default retrieval benchmarks run offline. **Atlas chat and Gemini answer benchmarks require Google credentials.**
+
+## Consistency and multilingual retrieval
+
+Services sharing sessions must share Redis; services sharing durable data must use the same SQLite database file. Separate `:memory:` databases are independent. This is a single-host SQLite design, not a distributed database: do not share SQLite over a network filesystem.
+
+| Layer | Implemented behavior | Cost / boundary |
+| --- | --- | --- |
+| Working | Compare-and-set appends with bounded retries prevent concurrent lost updates; reads bypass stale L1 snapshots | Redis round trips; still transient, not an atomic durable exchange |
+| Profile | Fact-limit check and upsert are transactional; insert/update/delete advance a revision used in cache keys | Each read checks SQLite's revision; old Redis versions expire by TTL |
+| Knowledge | Tenant indexes load lazily; committed chunk revisions invalidate other instances' indexes | First search and search after ingestion rebuild that tenant's index |
+| Lexical retrieval | NFKC normalization and Unicode letters, numbers, and combining marks | Not language-aware word segmentation or a semantic embedding model |
+| SQLite | Prepared statements are reused | No claim of measured end-to-end latency improvement yet |
+
+Existing databases gain revision tables/triggers automatically on open. Do not run old and new service versions together against the same Redis session keys: old writers do not use compare-and-set. Custom `RedisClient` implementations must now supply atomic `compareAndSet`; the built-in ioredis adapter uses a single-key Lua script.
+
+The default hash embedder retains its original `hashing-trick-v1` tokenization so existing vectors remain compatible. To use Unicode hashing, explicitly pass `new HashEmbeddingProvider(128, 'v2')` as the `embeddings` option with a new database and re-ingest your documents. Provider IDs prevent mixing incompatible vectors. Unicode BM25 works without changing embeddings or re-ingesting existing documents, since lexical indexes rebuild from stored text.
+
+Validate locally:
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm bench:locomo --mode bm25 --out reports/consistency-bm25.json
+pnpm bench:locomo --mode hybrid --out reports/consistency-hybrid.json
+```
+
+The consistency regression suite exercises shared Redis and two open services sharing SQLite. Real Redis integration, live Gemini quality, and production-scale contention are not covered by these offline tests. The next stage remains a durable raw-exchange/outbox transaction with idempotent asynchronous indexing, followed by topic/time/entity retrieval and calibrated semantic reranking. This change does not implement ConDB/ChatIndex tree traversal or prompt caching, and does not alter episodic, procedural, or operational memory behavior.
 
 ## Quick start
 

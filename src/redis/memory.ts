@@ -30,6 +30,12 @@ export class MemoryRedis implements RedisClient {
     return this.map.delete(key) ? 1 : 0;
   }
 
+  async compareAndSet(key: string, expected: Buffer | null, value: Buffer, ttlSec?: number): Promise<boolean> {
+    const current = this.read(key);
+    if (expected === null ? current !== null : current === null || !current.equals(expected)) return false;
+    this.write(key,value,ttlSec);this.stats.sets++;return true;
+  }
+
   async mgetBuffer(keys: readonly string[]): Promise<Array<Buffer | null>> {
     this.stats.mgets++;
     return keys.map((key) => {

@@ -13,6 +13,8 @@ export interface HotCacheStats {
 }
 
 export interface HotCacheOptions<T> {
+  atomic?: boolean;
+  version?: (id: string) => number;
   prefix: string;
   ttlSec: number;
   empty: () => T;
@@ -49,6 +51,7 @@ export class HotCache<T extends object> {
   }
 
   peek(id: string): T | undefined {
+    if (this.options.atomic) return undefined;
     const hit = this.l1.get(this.key(id));
     if (hit !== undefined) this.stats.l1Hits++;
     return hit;
@@ -56,7 +59,7 @@ export class HotCache<T extends object> {
 
   get(id: string): Promise<T> {
     const key = this.key(id);
-    const hit = this.l1.get(key);
+    const hit = this.options.atomic ? undefined : this.l1.get(key);
     if (hit !== undefined) {
       this.stats.l1Hits++;
       return Promise.resolve(hit);
@@ -69,6 +72,19 @@ export class HotCache<T extends object> {
   update(id: string, mutate: (current: T) => T | Promise<T>): Promise<T> {
     const key = this.key(id);
     return this.mutex.run(key, async () => {
+      if (this.options.atomic) {
+        // Retried mutations must be pure: never perform external side effects here.
+        for (let retry = 0; retry < 64; retry++) {
+          const old = await this.redis.getBuffer(key);
+          const next = await mutate(old ? decodeBlob<T>(old) : this.options.empty());
+          if (await this.redis.compareAndSet(key, old, encodeBlob(next), this.options.ttlSec)) {
+            this.l1.set(key, next);
+            return next;
+          }
+          await new Promise(resolve => setTimeout(resolve, Math.min(10, retry)));
+        }
+        throw new Error('Concurrent write contention exceeded retry limit');
+      }
       const current = await this.readThrough(key, id);
       if (this.options.invalidateFirst) {
         this.l1.delete(key);
@@ -90,7 +106,7 @@ export class HotCache<T extends object> {
   }
 
   private async load(key: string, id: string): Promise<T> {
-    const hot = this.l1.get(key);
+    const hot = this.options.atomic ? undefined : this.l1.get(key);
     if (hot !== undefined) return hot;
     const buf = await this.batcher.get(key);
     if (buf) {
@@ -125,7 +141,7 @@ export class HotCache<T extends object> {
   }
 
   private key(id: string): string {
-    return this.options.prefix + id;
+    return this.options.prefix + id + (this.options.version ? `:v${this.options.version(id)}` : '');
   }
 }
 
